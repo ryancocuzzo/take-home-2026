@@ -82,8 +82,23 @@ class TestStructuredExtraction(unittest.TestCase):
         )
         self.assertGreaterEqual(len(context.image_url_candidates), 1)
 
-    def test_all_five_pages_produce_extraction_context(self) -> None:
-        """All 5 pages produce a valid ExtractionContext without error."""
+    def test_therealreal_extracts_from_meta_tags(self) -> None:
+        """The RealReal page: extraction pulls from meta tags (og:*, canonical)."""
+        html = _load_html("therealreal-gucci-bag.html")
+
+        context = extract_structured_signals(
+            html,
+            page_url="https://www.therealreal.com/products/women/handbags/crossbody-bags/gucci-double-g-marmont-small-tkmwf",
+        )
+
+        self.assertTrue(
+            any("Gucci" in t or "Marmont" in t or "Double G" in t for t in context.title_candidates),
+            f"Expected product title in {context.title_candidates}",
+        )
+        self.assertGreaterEqual(len(context.image_url_candidates), 1)
+
+    def test_all_six_pages_produce_extraction_context(self) -> None:
+        """All 6 pages produce a valid ExtractionContext without error."""
         for name, _ in PAGES:
             with self.subTest(page=name):
                 html = _load_html(name)

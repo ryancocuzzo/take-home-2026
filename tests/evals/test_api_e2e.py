@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import app
-from backend.corpus import PRODUCTS_DIR
+from backend.corpus import PAGES, PRODUCTS_DIR
 from models import Product, ProductSummary
 from seed import seed_all
 
@@ -25,7 +25,7 @@ from seed import seed_all
 @pytest.fixture(scope="session")
 def seeded_product_ids(usage_accumulator) -> list[str]:
     """
-    Run the full pipeline for all 5 pages (real LLM calls), write JSON files,
+    Run the full pipeline for all pages (real LLM calls), write JSON files,
     and return the list of IDs that were successfully seeded.
     """
     seeded = asyncio.run(seed_all())
@@ -33,19 +33,20 @@ def seeded_product_ids(usage_accumulator) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Done gate 1: seed creates 5 JSON files
+# Done gate 1: seed creates JSON files for all pages
 # ---------------------------------------------------------------------------
 
 @pytest.mark.slow
-def test_seed_creates_five_json_files(seeded_product_ids: list[str]) -> None:
+def test_seed_creates_json_files_for_all_pages(seeded_product_ids: list[str]) -> None:
     json_files = list(PRODUCTS_DIR.glob("*.json"))
-    assert len(json_files) == 5, (
-        f"Expected 5 product JSON files in {PRODUCTS_DIR}, found {len(json_files)}"
+    expected = len(PAGES)
+    assert len(json_files) == expected, (
+        f"Expected {expected} product JSON files in {PRODUCTS_DIR}, found {len(json_files)}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Done gate 2: catalog endpoint returns all 5 products
+# Done gate 2: catalog endpoint returns all products
 # ---------------------------------------------------------------------------
 
 @pytest.mark.slow
@@ -56,7 +57,8 @@ def test_catalog_returns_all_products(seeded_product_ids: list[str]) -> None:
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) == 5, f"Expected 5 products, got {len(data)}"
+    expected = len(PAGES)
+    assert len(data) == expected, f"Expected {expected} products, got {len(data)}"
 
     for item in data:
         summary = ProductSummary.model_validate(item)

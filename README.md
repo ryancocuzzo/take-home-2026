@@ -103,7 +103,7 @@ See [docs/decisions.md](docs/decisions.md) for detailed trade-offs and bugs enco
 │   ├── components/              # ProductCard, ImageGallery, PriceDisplay
 │   └── types/                   # TypeScript interfaces mirroring Pydantic models
 ├── data/
-│   ├── *.html                   # 5 raw product pages (Ace, L.L.Bean, Nike, Article, A Day's March)
+│   ├── *.html                   # 6 raw product pages (Ace, L.L.Bean, Nike, Article, A Day's March, The RealReal)
 │   └── products/                # Extracted product JSON (pre-seeded)
 ├── tests/                       # Unit tests + eval suite
 └── docs/                        # Architecture deep dive + decision log

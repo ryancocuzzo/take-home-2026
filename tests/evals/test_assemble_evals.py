@@ -1,7 +1,7 @@
 """
 Eval tests for the full extraction pipeline: Pass 1 → taxonomy pre-filter → LLM assembler.
 
-These tests make real LLM calls and cost money (~$0.01 total for all 5 pages).
+These tests make real LLM calls and cost money (~$0.01 total for all pages).
 They are marked `slow` and excluded from normal CI.
 
 Run manually:
@@ -27,6 +27,7 @@ _PRICE_IN_STRUCTURED_DATA: dict[str, bool] = {
     "nike.html": True,
     "article.html": False,  # Price is in DOM only (<span class="regularPrice">), not in structured data — Pass 2 gap
     "adaysmarch.html": True,
+    "therealreal-gucci-bag.html": False,  # Price in data-amount on afterpay element, not in meta/JSON-LD/script blobs
 }
 
 # (filename, page_url, price_in_structured_data)
@@ -57,7 +58,7 @@ def test_pipeline_produces_valid_product(
     price_in_structured_data: bool,
     usage_accumulator,
 ) -> None:
-    """Full pipeline produces a validated Product for each of the 5 test pages."""
+    """Full pipeline produces a validated Product for each of the 6 test pages."""
     records_before = len(usage_accumulator.records)
     product = _run_pipeline(filename, page_url)
     cost = sum(r.cost for r in usage_accumulator.records[records_before:])
