@@ -33,7 +33,10 @@ Your job is to produce a single, valid Product object.
 Rules:
 - name: choose the most accurate and complete title from title_candidates.
 - description: choose or lightly combine the best description from description_candidates.
-- brand: choose the most credible brand from brand_candidates.
+- brand: choose the most credible brand from brand_candidates. If brand_candidates
+  is empty or unhelpful, infer the brand from other signals (description, title,
+  page URL domain, or breadcrumbs). For a retailer's own private-label products,
+  the retailer name is the brand.
 - price: parse the best price string from price_candidates into a numeric float.
   Use currency_candidates to determine the currency code (e.g. "USD", "GBP").
   If a sale price and original price are both present, set compare_at_price to the higher value.

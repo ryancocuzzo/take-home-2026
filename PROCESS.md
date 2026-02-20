@@ -49,10 +49,10 @@ Build models, Structured Signal Extraction (Pass 1: JSON-LD + meta + script blob
 Seed script runs pipeline for all 5 pages and writes JSON. FastAPI serves read-only routes.
 
 **Done gate:**
-- [ ] Running the seed script creates 5 product JSON files
-- [ ] Catalog endpoint returns all 5 products
-- [ ] Product detail endpoint returns full product data for a given ID
-- [ ] Requesting a product that doesn't exist returns 404
+- [x] Running the seed script creates 5 product JSON files
+- [x] Catalog endpoint returns all 5 products
+- [x] Product detail endpoint returns full product data for a given ID
+- [x] Requesting a product that doesn't exist returns 404
 
 **Watch for:**
 - No `POST /extract` in MVP1. Seed script handles extraction. Don't build what you don't need yet.
@@ -109,6 +109,8 @@ Setup instructions (backend + frontend). 1–2 paragraph system design write-up 
 | LLBean | `price = 0.0` | Pass 1 only read `itemprop` from `<meta>` tags; LLBean uses `<span itemprop="price" content="29.95">` | Extended `_SignalParser` to emit a signal for any element with both `itemprop` and `content` attributes |
 | Article | `price = 0.0` | Price is only in a DOM `<span class="regularPrice">` — no structured data | Accepted as a Pass 2 gap; eval test skips the price assertion for this page |
 | A Day's March | `ValidationError` on `compare_at_price` | LLM returned `"170\xa0USD"` instead of a bare float | Added `_coerce_price_string` validator on `Price` to extract the first numeric token from any string value |
+| Ace Hardware | `APIConnectionError` in eval tests | `@lru_cache` on `AsyncOpenAI` client bound it to the first `asyncio.run()` event loop; subsequent `asyncio.run()` calls in the same process got a new loop but the cached client still held connections from the closed loop, causing `RuntimeError: Event loop is closed` during httpx cleanup | Removed `@lru_cache` — client is cheap to create; a fresh instance per call is correctly scoped to the active event loop |
+| LLBean | `brand = ""` | `brand_candidates` was empty (L.L.Bean doesn't embed brand in structured data for their own private-label products) and `page_url` was `None`; LLM had nothing to pick from | Updated system prompt to instruct the LLM to infer brand from description/title/domain when `brand_candidates` is empty |
 
 ---
 

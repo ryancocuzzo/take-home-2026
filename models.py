@@ -66,6 +66,15 @@ class Product(BaseModel):
     variants: list[Variant] = Field(default_factory=list)
 
 
+class ProductSummary(BaseModel):
+    id: str
+    name: str
+    brand: str
+    price: Price
+    category: Category
+    image_url: str | None = None
+
+
 class ExtractionContext(BaseModel):
     """
     Intermediate candidate bag produced by deterministic extraction passes.

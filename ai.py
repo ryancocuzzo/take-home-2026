@@ -1,6 +1,5 @@
 import logging
 import os
-from functools import lru_cache
 from typing import Any, TypeVar
 
 from dotenv import load_dotenv
@@ -30,9 +29,15 @@ MODEL_PRICES: dict[str, dict[str, float]] = {
 T = TypeVar("T", bound=BaseModel)
 
 
-@lru_cache
 def _get_client() -> AsyncOpenAI:
-    """Get cached AsyncOpenAI client configured for OpenRouter."""
+    """Create an AsyncOpenAI client configured for OpenRouter.
+
+    A new instance is created per call intentionally: AsyncOpenAI wraps an
+    httpx.AsyncClient whose connection pool is bound to the running event loop.
+    Caching across asyncio.run() calls (each of which creates and closes its own
+    loop) would leave stale connections from the previous loop, causing
+    RuntimeError: Event loop is closed on the next call.
+    """
     api_key = os.environ.get("OPEN_ROUTER_API_KEY")
     if not api_key:
         raise ValueError("OPEN_ROUTER_API_KEY not found in environment")
