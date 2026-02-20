@@ -135,11 +135,22 @@ This design isolates the extraction passes from the assembly step. Either pass c
 
 ### Taxonomy pre-filter [MVP1]
 
-`categories.txt` has ~5,600 lines. Passing all of them to the LLM every call is expensive and noisy. The pre-filter reduces this to ~20 candidates using token overlap between the product title, brand, and top breadcrumb term.
+`categories.txt` has ~5,600 lines. Passing all of them to the LLM every call is expensive and noisy. The pre-filter reduces this to ~20 candidates using BM25 scoring (`rank-bm25`) against the product title, brand, and top breadcrumb term.
 
-This is ~10 lines of Python: tokenize, score by overlap count, return top 20. No library needed. If the top candidate has zero overlap (completely unrecognized product), the filter returns top-level category segments as a broader fallback.
+BM25 improves on raw token overlap in two ways: term saturation (repeating a word gives diminishing returns) and document-length normalisation (short category labels aren't penalised). The BM25 index is built once per unique category set and cached. If the top candidate scores 0 (completely unrecognized product), the filter returns top-level category segments as a broader fallback.
 
-**Trade-offs:** Token overlap is a blunt instrument. It won't rank "Apparel & Accessories > Shoes" above "Apparel & Accessories > Clothing" for a sneaker — the LLM makes that call. The pre-filter only needs to get the right answer into the top 20, not rank it first.
+**Trade-offs:**
+- BM25 v. Scikit-learn v. hand-rolled pre-filter
+  - Hand-rolled
+    - Pros: No additional dependencies
+    - Cons: requires maintaining a non-trivial amount of math logic
+  - Scikit-learn
+    - Pros: Easy to implement. Great community support.
+    - Cons: Huge dependency add because requires numpy & scipy, which we dont need.
+  - BM25
+    - Pros: Easy to implement. Small, focused dependency.
+    - Cons: Less community support because more niche.
+- BM25 is still keyword-based — it won't rank "Apparel & Accessories > Shoes" above "Apparel & Accessories > Clothing" for a sneaker without the word "shoes" appearing. The pre-filter only needs to get the right answer into the top 20; the LLM makes the final call.
 
 **Failure modes:**
 - No overlap with any category: fallback to broad segments. The LLM will pick the closest one, which may be imprecise but will be valid.
@@ -218,7 +229,7 @@ If the `Category` validator raises (LLM chose a string not in the taxonomy), the
 | `POST /extract` endpoint | **MVP3** | Seed script covers extraction; API stays read-only in MVP1 |
 | Skeleton loading states | **MVP3** | Polish — not blocking |
 | `AttributesTable` | **MVP3** | Display enhancement |
-| BM25 taxonomy retrieval | **Cut** | Token overlap achieves the same result in 10 lines |
+| Semantic embedding retrieval | **Cut** | BM25 covers the use case; embeddings add latency and a model dependency |
 | Per-variant image/price linking | **Cut** | Requires per-variant script blob mining; diminishing return |
 | Microdata parsing | **Cut** | JSON-LD covers the same pages better |
 | Evidence/provenance tracking | **Cut** | No payoff at this scope |
