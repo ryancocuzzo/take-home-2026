@@ -28,6 +28,16 @@ alwaysApply: true
 - **Before adding an abstraction:** Would a future reader understand this faster with or without it?
 - **Before splitting a file:** Is the file doing multiple unrelated things, or just one thing that happens to be long?
 - **Before adding a dependency:** Does it solve a real problem, or could 10 lines of code suffice?
+- **When one module starts doing parsing + mapping + normalization:** split by concern immediately.
+- **Prefer extension points over rule edits:** new sources/rules should be addable without rewriting core flow.
+- **Mutations go through methods:** avoid writing internal fields directly; keep invariants in one place.
+- **Non-obvious transforms must be explicit:** name/config them clearly and, when useful, keep lightweight provenance.
+
+## Default shape for non-trivial features
+
+- Keep a thin orchestrator and small focused components (parse / map / normalize), unless a single-file version is still clearly simpler.
+- Depend on narrow protocols at boundaries when it improves testability or protects core logic from storage/schema churn.
+- Start simple, but refactor once a second responsibility appears (don't wait for a large rewrite).
 
 ## Example
 
