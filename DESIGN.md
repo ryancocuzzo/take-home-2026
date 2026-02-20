@@ -20,7 +20,7 @@ Raw HTML
     │
     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Pass 1 · Structured Extraction            [MVP1]           │
+│  Structured Signal Extraction (Pass 1)     [MVP1]           │
 │  JSON-LD → meta tags → script blobs                         │
 │  Deterministic. No LLM. Cheap.                              │
 └──────────────────────────┬──────────────────────────────────┘
@@ -62,13 +62,13 @@ Raw HTML
 ### MVP2 addition
 
 ```
-Pass 1 output
+Structured Signal Extraction (Pass 1) output
     │
     ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Pass 2 · DOM Extraction                   [MVP2]           │
 │  Image priority ladder → option groups → visible text       │
-│  Heuristic. Fills gaps left by Pass 1.                      │
+│  Heuristic. Fills gaps left by Structured Signal Extraction │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                            ▼
@@ -87,7 +87,7 @@ Pass 1 output
 
 ## Components
 
-### Pass 1 — Structured extraction [MVP1]
+### Structured Signal Extraction (Pass 1) [MVP1]
 
 Pulls from three signal sources in priority order: JSON-LD, meta tags, embedded script blobs. All three are parsed unconditionally — there's no site detection.
 
@@ -106,7 +106,7 @@ All image URLs are resolved to absolute and deduplicated by normalized URL (resi
 
 ### Pass 2 — DOM extraction [MVP2]
 
-A heuristic pass that runs after Pass 1 and fills in what structured data missed. Two jobs: images and option groups.
+A heuristic pass that runs after Structured Signal Extraction (Pass 1) and fills in what structured data missed. Two jobs: images and option groups.
 
 Images follow a priority ladder (`data-zoom` → `srcset` max resolution → `data-src` → `src`). URLs containing `large / hires / 2048 / 1024` are ranked above thumbnails. Nav icons, logos, and tracking pixels (inferred from URL path or small dimensions) are filtered out.
 

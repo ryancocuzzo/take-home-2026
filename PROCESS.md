@@ -28,12 +28,12 @@ Work in this order. Each phase has a **done gate** — don't move on until it pa
 
 #### Phase 1 · Extraction pipeline
 
-Build models, Pass 1 (JSON-LD + meta + script blobs), taxonomy pre-filter, LLM assembler.
+Build models, Structured Signal Extraction (Pass 1: JSON-LD + meta + script blobs), taxonomy pre-filter, LLM assembler.
 
 **Done gate:**
-- [ ] Ace Hardware page: extraction pulls product data from the schema.org JSON-LD block
-- [ ] L.L.Bean page: extraction pulls product data from the embedded `window.__INITIAL_STATE__` blob
-- [ ] Nike page: extraction pulls from the `__NEXT_DATA__` script (Next.js)
+- [x] Ace Hardware page: extraction pulls product data from the schema.org JSON-LD block
+- [x] L.L.Bean page: extraction pulls product data from the embedded `window.__INITIAL_STATE__` blob
+- [x] Nike page: extraction pulls from the `__NEXT_DATA__` script (Next.js)
 - [ ] All 5 pages produce a valid Product (no validation errors)
 - [ ] Every product has a category that exists in the taxonomy file
 - [ ] Every product has at least one image

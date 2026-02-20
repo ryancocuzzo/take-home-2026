@@ -1,0 +1,170 @@
+from dataclasses import dataclass, field
+from typing import Any, Callable, Protocol
+
+
+class CandidateSink(Protocol):
+    def add_candidates(self, field_name: str, values: list[str]) -> None: ...
+    def add_raw_attribute(self, key: str, value: str | int | float | bool) -> None: ...
+
+
+@dataclass(frozen=True)
+class MappingRules:
+    json_key_to_field: dict[str, str] = field(
+        default_factory=lambda: {
+            "name": "title_candidates",
+            "title": "title_candidates",
+            "productName": "title_candidates",
+            "headline": "title_candidates",
+            "description": "description_candidates",
+            "shortDescription": "description_candidates",
+            "metaDescription": "description_candidates",
+            "subtitle": "description_candidates",
+            "brand": "brand_candidates",
+            "brandName": "brand_candidates",
+            "vendor": "brand_candidates",
+            "manufacturer": "brand_candidates",
+            "price": "price_candidates",
+            "salePrice": "price_candidates",
+            "currentPrice": "price_candidates",
+            "listPrice": "price_candidates",
+            "compareAtPrice": "price_candidates",
+            "priceCurrency": "currency_candidates",
+            "currency": "currency_candidates",
+            "currencyCode": "currency_candidates",
+            "image": "image_url_candidates",
+            "images": "image_url_candidates",
+            "imageUrl": "image_url_candidates",
+            "imageUrls": "image_url_candidates",
+            "primaryImage": "image_url_candidates",
+            "category": "category_hint_candidates",
+            "productType": "category_hint_candidates",
+            "breadcrumb": "category_hint_candidates",
+            "positiveNotes": "key_feature_candidates",
+            "keyFeatures": "key_feature_candidates",
+            "features": "key_feature_candidates",
+            "highlights": "key_feature_candidates",
+            "benefits": "key_feature_candidates",
+            "color": "color_candidates",
+            "colour": "color_candidates",
+            "colors": "color_candidates",
+            "colourways": "color_candidates",
+            "colorDescription": "color_candidates",
+        }
+    )
+    meta_key_to_field: dict[str, str] = field(
+        default_factory=lambda: {
+            "og:title": "title_candidates",
+            "twitter:title": "title_candidates",
+            "title": "title_candidates",
+            "description": "description_candidates",
+            "og:description": "description_candidates",
+            "twitter:description": "description_candidates",
+            "og:image": "image_url_candidates",
+            "twitter:image": "image_url_candidates",
+            "image": "image_url_candidates",
+            "og:brand": "brand_candidates",
+            "brand": "brand_candidates",
+            "product:brand": "brand_candidates",
+            "product:price:amount": "price_candidates",
+            "og:price:amount": "price_candidates",
+            "product:price:currency": "currency_candidates",
+            "og:price:currency": "currency_candidates",
+        }
+    )
+
+
+def collect_candidates_from_node(
+    node: Any,
+    sink: CandidateSink,
+    rules: MappingRules,
+    image_transform: Callable[[str], str] | None = None,
+) -> None:
+    # Extract known keys into candidate lists
+    for key, field_name in rules.json_key_to_field.items():
+        values = _collect_values_for_key(node, key)
+        if image_transform and field_name == "image_url_candidates":
+            values = [image_transform(v) for v in values]
+        sink.add_candidates(field_name, values)
+
+    # Capture remaining primitive attributes (skip JSON-LD metadata and already-extracted keys)
+    if isinstance(node, dict):
+        known_keys = set(rules.json_key_to_field.keys())
+        for key, value in node.items():
+            if _should_skip_raw_attribute(key, value, known_keys):
+                continue
+            sink.add_raw_attribute(key, value)
+
+
+def _should_skip_raw_attribute(key: str, value: Any, known_keys: set[str]) -> bool:
+    """Skip JSON-LD metadata and keys we already extracted into candidates."""
+    if key.startswith("@"):  # JSON-LD metadata (@type, @context, etc.)
+        return True
+    if key in known_keys:  # Already extracted into candidate lists
+        return True
+    if not isinstance(value, (str, int, float, bool)):  # Only capture primitives
+        return True
+    return False
+
+
+def collect_breadcrumb_hints(node: Any, sink: CandidateSink) -> None:
+    if not isinstance(node, dict):
+        return
+    if node.get("@type") != "BreadcrumbList":
+        return
+    elements = node.get("itemListElement")
+    if not isinstance(elements, list):
+        return
+    names: list[str] = []
+    for element in elements:
+        if isinstance(element, dict) and isinstance(element.get("name"), str):
+            names.append(element["name"])
+    sink.add_candidates("category_hint_candidates", names)
+
+
+def iter_jsonld_nodes(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        graph = payload.get("@graph")
+        if isinstance(graph, list):
+            return [node for node in graph if isinstance(node, dict)]
+        return [payload]
+    if isinstance(payload, list):
+        return [node for node in payload if isinstance(node, dict)]
+    return []
+
+
+def _collect_values_for_key(node: Any, target_key: str) -> list[str]:
+    values: list[str] = []
+
+    def walk(obj: Any) -> None:
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key == target_key:
+                    values.extend(_flatten_scalar_strings(value))
+                walk(value)
+            return
+        if isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(node)
+    return values
+
+
+def _flatten_scalar_strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (int, float)):
+        return [str(value)]
+    if isinstance(value, dict):
+        flattened: list[str] = []
+        for key in ("name", "value", "url", "text"):
+            nested = value.get(key)
+            if isinstance(nested, str):
+                flattened.append(nested)
+        return flattened
+    if isinstance(value, list):
+        flattened: list[str] = []
+        for item in value:
+            flattened.extend(_flatten_scalar_strings(item))
+        return flattened
+    return []

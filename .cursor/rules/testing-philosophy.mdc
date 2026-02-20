@@ -1,0 +1,34 @@
+---
+description: Testing philosophy — pragmatic, high-signal, low-noise tests
+alwaysApply: true
+---
+
+# Testing Philosophy
+
+Tests should earn their place. Only write a test if it would catch a real bug or document a non-obvious contract.
+
+## What to test
+
+- Behavior that matters to the domain (correctness of extraction, mapping, scoring)
+- Edge cases that have caused or could plausibly cause bugs
+- Public interfaces — not implementation details
+
+## What not to test
+
+- Internal helpers that are exercised by higher-level tests
+- Code paths so simple they'd only break if Python itself breaks
+- Things that change constantly with no clear correctness criterion
+
+## Rules
+
+- **One assertion per logical concern** — not one per test, but don't cram unrelated checks into one test
+- **No brittle assertions** — don't assert on string formatting, ordering, or incidental output unless the feature is exactly that
+- **Real inputs > mocks** — use actual sample data where feasible; mock only I/O boundaries (network, disk) when necessary
+- **Descriptive names** — `test_extracts_salary_range_from_json_ld` beats `test_extract_1`
+- **AAA structure** — Arrange / Act / Assert, clearly separated
+
+## Heuristics
+
+- If a test breaks when you refactor internals without changing behavior, delete or rewrite it
+- If a test passes even when the feature is broken, delete it
+- If a test is hard to read, it's probably testing the wrong thing
