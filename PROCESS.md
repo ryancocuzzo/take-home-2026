@@ -77,18 +77,18 @@ Catalog grid at `/`, PDP at `/products/:id`. Next.js + React + TypeScript + shad
 Setup instructions (backend + frontend). 1–2 paragraph system design write-up in your own words.
 
 **Done gate:**
-- [ ] Someone can clone the repo, follow the README, and get the app running
-- [ ] System design explains how extraction works and why it's split into multiple passes
+- [x] Someone can clone the repo, follow the README, and get the app running
+- [x] System design explains how extraction works and why it's split into multiple passes
 
 ---
 
 ### Sanity checks (run before calling MVP1 done)
 
-- [ ] Product JSON loads and validates without errors
-- [ ] API returns data in the format the frontend expects
-- [ ] No hardcoded file paths or API keys in committed code
-- [ ] `.env.example` exists if env vars are required
-- [ ] Only the 5 provided HTML files are used as test data — no invented fixtures
+- [x] Product JSON loads and validates without errors
+- [x] API returns data in the format the frontend expects
+- [x] No hardcoded file paths or API keys in committed code
+- [x] `.env.example` exists if env vars are required
+- [x] Only the 5 provided HTML files are used as test data — no invented fixtures
 
 ---
 
