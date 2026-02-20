@@ -34,10 +34,10 @@ Build models, Structured Signal Extraction (Pass 1: JSON-LD + meta + script blob
 - [x] Ace Hardware page: extraction pulls product data from the schema.org JSON-LD block
 - [x] L.L.Bean page: extraction pulls product data from the embedded `window.__INITIAL_STATE__` blob
 - [x] Nike page: extraction pulls from the `__NEXT_DATA__` script (Next.js)
-- [ ] All 5 pages produce a valid Product (no validation errors)
-- [ ] Every product has a category that exists in the taxonomy file
-- [ ] Every product has at least one image
-- [ ] AI cost per product is under 1¢ (check model pricing if unsure)
+- [x] All 5 pages produce a valid Product (no validation errors)
+- [x] Every product has a category that exists in the taxonomy file
+- [x] Every product has at least one image
+- [x] AI cost per product is under 1¢ (check model pricing if unsure)
 
 **Watch for:**
 - Nike and Article HTML is JS-rendered — raw HTML will be sparse. That's fine. Valid-but-sparse beats over-engineering.
