@@ -43,7 +43,7 @@ def extract_structured_signals(
     Example:
         ```python
         # Basic usage - just pass HTML
-        html = open("data/nike.html").read()
+        html = (DATA_DIR / "nike.html").read_text()  # DATA_DIR from backend.corpus
         context = extract_structured_signals(html)
         
         # Check what was extracted

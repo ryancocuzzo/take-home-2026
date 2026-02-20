@@ -11,33 +11,27 @@ The -s flag ensures the cost summary printed by conftest.py is visible.
 """
 
 import asyncio
-from pathlib import Path
 
 import pytest
 
 from backend.assemble.assemble import assemble_product
+from backend.corpus import DATA_DIR, PAGES
 from backend.extract.structured_extraction import extract_structured_signals
 from backend.taxonomy.prefilter import select_category_candidates
 from models import VALID_CATEGORIES, Product
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+# price_in_structured_data=False means price is DOM-only (requires Pass 2); skip that assertion.
+_PRICE_IN_STRUCTURED_DATA: dict[str, bool] = {
+    "ace.html": True,
+    "llbean.html": True,
+    "nike.html": True,
+    "article.html": False,  # Price is in DOM only (<span class="regularPrice">), not in structured data — Pass 2 gap
+    "adaysmarch.html": True,
+}
 
 # (filename, page_url, price_in_structured_data)
-# price_in_structured_data=False means price is DOM-only (requires Pass 2); skip that assertion.
 _PAGES: list[tuple[str, str | None, bool]] = [
-    (
-        "ace.html",
-        "https://www.acehardware.com/departments/tools/power-tools/cordless-drills/2385458",
-        True,
-    ),
-    ("llbean.html", None, True),
-    ("nike.html", "https://www.nike.com/t/air-force-1-07-lv8-shoes", True),
-    (
-        "article.html",
-        "https://www.article.com/product/pilar-lamp",
-        False,  # Price is in DOM only (<span class="regularPrice">), not in structured data — Pass 2 gap
-    ),
-    ("adaysmarch.html", "https://www.adaysmarch.com/products/miller-trousers", True),
+    (filename, url, _PRICE_IN_STRUCTURED_DATA[filename]) for filename, url in PAGES
 ]
 
 

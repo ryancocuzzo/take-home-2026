@@ -1,12 +1,10 @@
 """Tests for structured extraction (Pass 1: JSON-LD, meta tags, script blobs)."""
 
 import unittest
-from pathlib import Path
 
+from backend.corpus import DATA_DIR, PAGES
 from backend.extract.structured_extraction import extract_structured_signals
 from models import ExtractionContext
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 def _load_html(name: str) -> str:
@@ -86,9 +84,7 @@ class TestStructuredExtraction(unittest.TestCase):
 
     def test_all_five_pages_produce_extraction_context(self) -> None:
         """All 5 pages produce a valid ExtractionContext without error."""
-        pages = ["ace.html", "llbean.html", "nike.html", "article.html", "adaysmarch.html"]
-
-        for name in pages:
+        for name, _ in PAGES:
             with self.subTest(page=name):
                 html = _load_html(name)
                 context = extract_structured_signals(html)
