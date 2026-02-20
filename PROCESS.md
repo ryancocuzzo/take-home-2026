@@ -59,14 +59,14 @@ Seed script runs pipeline for all 5 pages and writes JSON. FastAPI serves read-o
 
 #### Phase 3 · Frontend
 
-Catalog grid at `/`, PDP at `/products/:id`. Vite + React + TypeScript + shadcn.
+Catalog grid at `/`, PDP at `/products/:id`. Next.js + React + TypeScript + shadcn.
 
 **Done gate:**
-- [ ] Catalog shows all 5 products (image, name, brand, price)
-- [ ] Clicking a product card opens the product detail page
-- [ ] Product detail page shows image gallery, price (and sale price if applicable), description
-- [ ] Back navigation returns to catalog
-- [ ] No console errors
+- [x] Catalog shows all 5 products (image, name, brand, price)
+- [x] Clicking a product card opens the product detail page
+- [x] Product detail page shows image gallery, price (and sale price if applicable), description
+- [x] Back navigation returns to catalog
+- [x] No console errors
 
 **Watch for:**
 - If running long, cut variants display first. Catalog + PDP with image/price/description is the minimum bar.
