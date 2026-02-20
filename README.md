@@ -31,11 +31,12 @@ flowchart LR
 
     subgraph extract ["Deterministic - no LLM"]
         Pass1["Pass 1: JSON-LD, meta tags, script blobs"]
+
+        Pass1 --> Context["ExtractionContext - candidate bag"]
+
+        Context --> BM25["Taxonomy Pre-filter: BM25 to top 20 categories"]
     end
 
-    Pass1 --> Context["ExtractionContext - candidate bag"]
-
-    Context --> BM25["Taxonomy Pre-filter: BM25 to top 20 categories"]
     Context --> Assembler
 
     BM25 --> Assembler["LLM Assembler: gemini-2.0-flash-lite, structured output"]
