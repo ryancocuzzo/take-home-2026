@@ -4,7 +4,7 @@ Paths and page registry for the sample product corpus.
 Single source of truth for:
 - DATA_DIR    — directory containing the raw HTML pages
 - PRODUCTS_DIR — directory where seeded product JSON files are written/read
-- PAGES        — the 6 product pages in the corpus (filename, canonical URL or None)
+- PAGES        — the 7 product pages in the corpus (filename, canonical URL or None)
 """
 
 from pathlib import Path
@@ -21,4 +21,5 @@ PAGES: list[tuple[str, str | None]] = [
     ("article.html", "https://www.article.com/product/pilar-lamp"),
     ("adaysmarch.html", "https://www.adaysmarch.com/products/miller-trousers"),
     ("therealreal-gucci-bag.html", "https://www.therealreal.com/products/women/handbags/crossbody-bags/gucci-double-g-marmont-small-tkmwf"),
+    ("allbirds-shoe.html", "https://www.allbirds.com/products/mens-dasher-nz"),
 ]

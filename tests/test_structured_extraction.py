@@ -97,8 +97,25 @@ class TestStructuredExtraction(unittest.TestCase):
         )
         self.assertGreaterEqual(len(context.image_url_candidates), 1)
 
-    def test_all_six_pages_produce_extraction_context(self) -> None:
-        """All 6 pages produce a valid ExtractionContext without error."""
+    def test_allbirds_extracts_from_meta_tags_and_script(self) -> None:
+        """Allbirds page: extraction pulls from meta tags (og:*) and Shopify script blobs."""
+        html = _load_html("allbirds-shoe.html")
+
+        context = extract_structured_signals(
+            html,
+            page_url="https://www.allbirds.com/products/mens-dasher-nz",
+        )
+
+        self.assertTrue(
+            any("Dasher" in t or "Allbirds" in t for t in context.title_candidates),
+            f"Expected product title in {context.title_candidates}",
+        )
+        self.assertIn("Allbirds", context.brand_candidates)
+        self.assertIn("140.00", context.price_candidates)
+        self.assertGreaterEqual(len(context.image_url_candidates), 1)
+
+    def test_all_pages_produce_extraction_context(self) -> None:
+        """All pages produce a valid ExtractionContext without error."""
         for name, _ in PAGES:
             with self.subTest(page=name):
                 html = _load_html(name)
