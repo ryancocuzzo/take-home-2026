@@ -1,0 +1,44 @@
+---
+description: Core coding philosophy — simplicity, clarity, pragmatic SOLID
+alwaysApply: true
+---
+
+# Code Philosophy
+
+**Central goals:** Good software practice, simplicity, and ease of understanding. Code should be easy for a reader to reason about.
+
+## Principles
+
+1. **Simplicity over cleverness** — Prefer straightforward implementations. Avoid abstractions that don't yet earn their keep. YAGNI: don't add layers "for flexibility" until you need them.
+
+2. **Pragmatic SOLID** — Apply SOLID and clean code principles where they reduce complexity and improve clarity. Don't over-engineer: a single well-named function can be better than a 5-class hierarchy for a small, stable concern.
+
+3. **Easy to reason about** — A reader should understand what code does without tracing through many files. Favor:
+   - Clear, domain-aligned names
+   - Small, focused functions
+   - Obvious data flow (avoid hidden side effects)
+   - One responsibility per module, but one module per responsibility only when the alternative is muddled
+
+4. **Separation of concerns** — Keep business logic out of controllers/API handlers. Extract domain logic into dedicated modules. But: don't split a 50-line module into 5 files just to satisfy a rule.
+
+5. **Composition over inheritance** — Prefer injecting dependencies and composing behavior over deep inheritance trees. Interfaces/abstractions are useful when they clarify contracts or enable testing; avoid them when they add indirection without benefit.
+
+## Heuristics
+
+- **Before adding an abstraction:** Would a future reader understand this faster with or without it?
+- **Before splitting a file:** Is the file doing multiple unrelated things, or just one thing that happens to be long?
+- **Before adding a dependency:** Does it solve a real problem, or could 10 lines of code suffice?
+
+## Example
+
+```python
+# ✅ GOOD — clear, single responsibility, easy to follow
+def extract_json_ld(html: str) -> list[dict]:
+    """Parse all JSON-LD script blocks from HTML."""
+    ...
+
+# ❌ AVOID — abstraction that adds indirection without payoff
+class JsonLdExtractorStrategy(Protocol):
+    def extract(self, html: str) -> list[dict]: ...
+# ... plus 3 implementations for a single extraction path
+```
