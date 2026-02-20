@@ -48,6 +48,9 @@ def _run_pipeline(filename: str, page_url: str | None) -> Product:
     return asyncio.run(assemble_product(context, candidates))
 
 
+_COST_BUDGET_PER_PRODUCT = 0.01  # $0.01 = 1¢
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "filename,page_url,price_in_structured_data",
@@ -58,10 +61,12 @@ def test_pipeline_produces_valid_product(
     filename: str,
     page_url: str | None,
     price_in_structured_data: bool,
-    usage_accumulator,  # ensures session accumulator is active
+    usage_accumulator,
 ) -> None:
     """Full pipeline produces a validated Product for each of the 5 test pages."""
+    records_before = len(usage_accumulator.records)
     product = _run_pipeline(filename, page_url)
+    cost = sum(r.cost for r in usage_accumulator.records[records_before:])
 
     assert isinstance(product, Product), f"{filename}: result is not a Product"
     assert product.name, f"{filename}: product.name is empty"
@@ -72,3 +77,6 @@ def test_pipeline_produces_valid_product(
     )
     assert len(product.image_urls) >= 1, f"{filename}: no images"
     assert product.brand, f"{filename}: brand is empty"
+    assert cost < _COST_BUDGET_PER_PRODUCT, (
+        f"{filename}: LLM cost ${cost:.6f} exceeds {_COST_BUDGET_PER_PRODUCT * 100:.0f}¢ budget"
+    )
