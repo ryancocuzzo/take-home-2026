@@ -70,6 +70,10 @@ The read-only `GET /products` and `GET /products/{id}` endpoints are a starting 
 
 For developers building new shopping experiences, I'd provide: (1) a webhook/streaming endpoint that emits newly extracted products as they're processed, so downstream apps don't need to poll; (2) a comparison endpoint that returns a structured diff between products (price, features, availability) to power "compare these two" flows; and (3) an OpenAPI spec with typed SDKs so agent frameworks like LangChain or Vercel AI SDK can call the API as a tool with zero glue code.
 
+## CI
+
+GitHub Actions runs all tests (including slow LLM evals) on every push and PR.
+
 ## Key Decisions
 
 | Decision | Reasoning |
