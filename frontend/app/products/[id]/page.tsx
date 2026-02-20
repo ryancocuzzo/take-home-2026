@@ -135,6 +135,53 @@ export default async function ProductPage({ params }: PageProps) {
               </div>
             )}
 
+            {product.variants.length > 0 && (
+              <div className="mb-8">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-foreground">
+                  Available options
+                </h2>
+                <div className="flex flex-col gap-4">
+                  {(() => {
+                    const attrKeys = new Set<string>();
+                    for (const v of product.variants) {
+                      for (const k of Object.keys(v.attributes ?? {})) {
+                        attrKeys.add(k);
+                      }
+                    }
+                    return Array.from(attrKeys).map((attrKey) => {
+                      const values = [
+                        ...new Set(
+                          product.variants
+                            .map((v) => (v.attributes ?? {})[attrKey])
+                            .filter(Boolean)
+                        ),
+                      ] as string[];
+                      const label =
+                        attrKey.charAt(0).toUpperCase() + attrKey.slice(1);
+                      return (
+                        <div key={attrKey}>
+                          <p className="mb-2 text-xs text-muted-foreground">
+                            {label}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {values.map((val) => (
+                              <Badge
+                                key={val}
+                                variant="outline"
+                                className="text-xs font-normal"
+                              >
+                                {val}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
+
             <div className="mt-auto border-t border-border/60 pt-6">
               <p className="text-xs text-muted-foreground">
                 {product.category.name}

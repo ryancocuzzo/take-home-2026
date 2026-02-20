@@ -48,6 +48,30 @@ These are real issues discovered by running the pipeline against all 5 product p
 
 **Fix:** Updated the system prompt to instruct the LLM to infer brand from description, title, or domain when `brand_candidates` is empty. For a retailer's own products, the retailer name is the brand.
 
+### Allbirds: variants not extracted
+
+**Symptom:** `variants = []` on the Allbirds product despite the page having 14 size options in a Shopify `var meta = {...}` blob.
+
+**Cause:** Two gaps in Pass 1. (1) `iter_assigned_json_blobs` only matched `window.__FOO__ = {...}` patterns, not `var name = {...}` or `let`/`const` assignments used by Shopify and others. (2) `collect_candidates_from_node` only stored primitive values in `raw_attributes`; list/dict values like `variants` were silently dropped by `_should_skip_raw_attribute`.
+
+**Fix:** Extended script blob extraction to also match `var`/`let`/`const` assignments. Added `structured_passthrough_keys` (variants, options, option_groups) to `MappingRules` — when these keys have list/dict values, they are JSON-serialized into `raw_attributes` so the LLM can build Variant objects. Regex + balanced-bracket extraction was chosen over a full JS parser; BeautifulSoup is irrelevant here since the problem is parsing *within* JavaScript, not HTML.
+
+### A Day's March trousers: colors empty despite hex codes in color_candidates
+
+**Symptom:** `colors = []` on the trousers product even though `color_candidates` contained hex codes (e.g. `#888888`) from `swatchColors` in `data-product-object`.
+
+**Cause:** The assembler prompt said "use color_candidates" but was too vague. The LLM sometimes ignored them or returned empty.
+
+**Fix:** Tightened the colors rule in the system prompt: list all options from `color_candidates`, include hex codes and colorway names, empty only when candidates are empty.
+
+### Allbirds: colors were product titles instead of colorway names
+
+**Symptom:** `colors` contained entries like `"Men's Dasher NZ - Blizzard/Deep Navy (Blizzard Sole)"` instead of `"Blizzard/Deep Navy (Blizzard Sole)"`, `"Auburn"`, etc.
+
+**Cause:** Product-title-like strings (from og:title, variant names, etc.) were ending up in `color_candidates`. The LLM followed the prompt but the candidates were noisy.
+
+**Fix:** Filter `color_candidates` before assembly: drop entries that start with `Men's `, `Women's `, `Kids' `, `Unisex ` — these are product title prefixes, not color names.
+
 ---
 
 ## Scope Decisions

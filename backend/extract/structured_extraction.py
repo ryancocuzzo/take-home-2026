@@ -4,7 +4,7 @@ from typing import Any
 
 from models import ExtractionContext
 
-from .html_signals import MetaSignal, ScriptSignal, extract_html_signals
+from .html_signals import DataJsonSignal, MetaSignal, ScriptSignal, extract_html_signals
 from .mapping import (
     MappingRules,
     collect_breadcrumb_hints,
@@ -63,7 +63,7 @@ def extract_structured_signals(
     normalizer = url_normalizer or UrlNormalizer()
 
     context = ExtractionContext(page_url=page_url)
-    scripts, meta_tags = extract_html_signals(html_text)
+    scripts, meta_tags, data_json, data_color_values = extract_html_signals(html_text)
     image_transform = _image_transform(normalizer=normalizer, page_url=page_url)
 
     _extract_json_ld(scripts=scripts, context=context, rules=rules, image_transform=image_transform)
@@ -73,7 +73,24 @@ def extract_structured_signals(
     _extract_script_blobs(
         scripts=scripts, context=context, rules=rules, image_transform=image_transform
     )
+    _extract_data_json(
+        data_json=data_json, context=context, rules=rules, image_transform=image_transform
+    )
+    if data_color_values:
+        context.add_candidates("color_candidates", data_color_values)
+    _filter_product_title_colors(context)
     return context
+
+
+def _filter_product_title_colors(context: ExtractionContext) -> None:
+    """Remove product-title-like entries from color_candidates (e.g. "Men's Dasher NZ - Blizzard/Deep Navy")."""
+    prefixes = ("Men's ", "Women's ", "Kids' ", "Unisex ")
+    filtered = [
+        c for c in context.color_candidates
+        if not any(c.startswith(prefix) for prefix in prefixes)
+    ]
+    context.color_candidates.clear()
+    context.color_candidates.extend(filtered)
 
 
 def _extract_json_ld(
@@ -132,6 +149,26 @@ def _extract_script_blobs(
             collect_candidates_from_node(
                 node=blob, sink=context, rules=rules, image_transform=image_transform
             )
+
+
+def _extract_data_json(
+    data_json: list[DataJsonSignal],
+    context: ExtractionContext,
+    rules: MappingRules,
+    image_transform: Callable[[str], str],
+) -> None:
+    for signal in data_json:
+        payload = signal.payload
+        if isinstance(payload, dict):
+            collect_candidates_from_node(
+                node=payload, sink=context, rules=rules, image_transform=image_transform
+            )
+        elif isinstance(payload, list):
+            for item in payload:
+                if isinstance(item, dict):
+                    collect_candidates_from_node(
+                        node=item, sink=context, rules=rules, image_transform=image_transform
+                    )
 
 
 def _safe_json_loads(value: str) -> Any | None:

@@ -114,6 +114,49 @@ class TestStructuredExtraction(unittest.TestCase):
         self.assertIn("140.00", context.price_candidates)
         self.assertGreaterEqual(len(context.image_url_candidates), 1)
 
+    def test_allbirds_extracts_colors_from_data_product_object(self) -> None:
+        """Allbirds page: colorName and hues from data-product-object populate color_candidates."""
+        html = _load_html("allbirds-shoe.html")
+        context = extract_structured_signals(
+            html,
+            page_url="https://www.allbirds.com/products/mens-dasher-nz",
+        )
+
+        self.assertIn("Blizzard/Deep Navy", str(context.color_candidates))
+        self.assertTrue(
+            any(c in context.color_candidates for c in ["blue", "white"]),
+            f"Expected hues in color_candidates, got {context.color_candidates}",
+        )
+
+    def test_allbirds_extracts_available_colorways_from_data_attributes(self) -> None:
+        """Allbirds page: data-product-color and swatch aria-labels include Auburn and other colorways."""
+        html = _load_html("allbirds-shoe.html")
+        context = extract_structured_signals(
+            html,
+            page_url="https://www.allbirds.com/products/mens-dasher-nz",
+        )
+
+        self.assertTrue(
+            any("Auburn" in c for c in context.color_candidates),
+            f"Expected Auburn in color_candidates, got {context.color_candidates}",
+        )
+
+    def test_allbirds_extracts_variants_into_raw_attributes(self) -> None:
+        """Allbirds page: variants from var meta = {...} blob are passed through to raw_attributes."""
+        import json
+
+        html = _load_html("allbirds-shoe.html")
+        context = extract_structured_signals(
+            html,
+            page_url="https://www.allbirds.com/products/mens-dasher-nz",
+        )
+
+        self.assertIn("variants", context.raw_attributes)
+        variants = json.loads(context.raw_attributes["variants"])
+        self.assertGreaterEqual(len(variants), 10)
+        self.assertIn("public_title", variants[0])
+        self.assertIn("8", [v["public_title"] for v in variants])
+
     def test_all_pages_produce_extraction_context(self) -> None:
         """All pages produce a valid ExtractionContext without error."""
         for name, _ in PAGES:

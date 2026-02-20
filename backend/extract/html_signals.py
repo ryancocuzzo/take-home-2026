@@ -1,6 +1,14 @@
 import html
+import json
 from dataclasses import dataclass
 from html.parser import HTMLParser
+
+
+@dataclass(frozen=True)
+class DataJsonSignal:
+    """A data-* attribute whose value is JSON (e.g. data-product-object)."""
+    key: str
+    payload: dict | list
 
 
 @dataclass(frozen=True)
@@ -15,11 +23,18 @@ class MetaSignal:
     content: str
 
 
+_DATA_JSON_ATTRS = frozenset({"data-product-object", "data-product", "data-colorways"})
+_DATA_COLOR_ATTR = "data-product-color"
+_DATA_SWATCH_ATTR = "data-color-swatch"
+
+
 class _SignalParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.scripts: list[ScriptSignal] = []
         self.meta_tags: list[MetaSignal] = []
+        self.data_json: list[DataJsonSignal] = []
+        self.data_color_values: list[str] = []
         self._script_attrs: dict[str, str] | None = None
         self._script_chunks: list[str] = []
 
@@ -30,6 +45,23 @@ class _SignalParser(HTMLParser):
             self._script_attrs = attrs_dict
             self._script_chunks = []
             return
+
+        for key, value in attrs_dict.items():
+            if key in _DATA_JSON_ATTRS and value.strip().startswith(("{", "[")):
+                try:
+                    payload = json.loads(html.unescape(value.strip()))
+                    if isinstance(payload, (dict, list)):
+                        self.data_json.append(DataJsonSignal(key=key, payload=payload))
+                except json.JSONDecodeError:
+                    pass
+            elif key == _DATA_COLOR_ATTR and value.strip():
+                self.data_color_values.append(html.unescape(value.strip()))
+            elif key == _DATA_SWATCH_ATTR:
+                aria = attrs_dict.get("aria-label", "").strip()
+                if " - " in aria and " swatch" in aria:
+                    color_part = aria.split(" - ", 1)[1].removesuffix(" swatch")
+                    if color_part:
+                        self.data_color_values.append(html.unescape(color_part))
 
         if tag == "meta":
             # Meta tags: accept property/name/itemprop as key
@@ -56,7 +88,9 @@ class _SignalParser(HTMLParser):
         self._script_chunks = []
 
 
-def extract_html_signals(html_text: str) -> tuple[list[ScriptSignal], list[MetaSignal]]:
+def extract_html_signals(
+    html_text: str,
+) -> tuple[list[ScriptSignal], list[MetaSignal], list[DataJsonSignal], list[str]]:
     parser = _SignalParser()
     parser.feed(html_text)
-    return parser.scripts, parser.meta_tags
+    return parser.scripts, parser.meta_tags, parser.data_json, parser.data_color_values

@@ -2,34 +2,46 @@ import json
 import re
 from typing import Any
 
-
-_ASSIGNMENT_PREFIX_RE = re.compile(r"(window|self|globalThis)\.__[A-Za-z0-9_]+\s*=")
+# window.__FOO__ =, window.<PAGE>.page =, self.__DATA__ =, etc.
+_GLOBAL_ASSIGNMENT_RE = re.compile(
+    r"(window|self|globalThis)\.(?:[A-Za-z0-9_]+\.)*[A-Za-z0-9_]+\s*="
+)
+# var meta =, let product =, const data = (common in Shopify, etc.)
+_VAR_ASSIGNMENT_RE = re.compile(r"(?:var|let|const)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=")
 
 
 def iter_assigned_json_blobs(script_body: str) -> list[Any]:
     """
     Extract JSON blobs from common assignment patterns:
       window.__FOO__ = {...};
-      self.__DATA__ = [...];
-      globalThis.__STATE__ = {...};
+      var meta = {"product": {...}};   (Shopify, etc.)
+      let product = [...];
     """
     payloads: list[Any] = []
-    idx = 0
-    while True:
-        match = _ASSIGNMENT_PREFIX_RE.search(script_body, idx)
-        if not match:
-            break
-        json_start = _next_json_start(script_body, match.end())
-        if json_start < 0:
-            idx = match.end()
-            continue
+    seen_ranges: set[tuple[int, int]] = set()
 
-        extracted, end_idx = _extract_balanced_json(script_body, json_start)
-        if extracted:
-            payload = _safe_json_loads(extracted)
-            if payload is not None:
-                payloads.append(payload)
-        idx = end_idx
+    for pattern in (_GLOBAL_ASSIGNMENT_RE, _VAR_ASSIGNMENT_RE):
+        idx = 0
+        while True:
+            match = pattern.search(script_body, idx)
+            if not match:
+                break
+            json_start = _next_json_start(script_body, match.end())
+            if json_start < 0:
+                idx = match.end()
+                continue
+
+            extracted, end_idx = _extract_balanced_json(script_body, json_start)
+            if extracted:
+                # Avoid duplicates when both patterns match the same blob
+                key = (json_start, end_idx)
+                if key not in seen_ranges:
+                    seen_ranges.add(key)
+                    payload = _safe_json_loads(extracted)
+                    if payload is not None:
+                        payloads.append(payload)
+            idx = end_idx
+
     return payloads
 
 

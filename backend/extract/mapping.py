@@ -1,4 +1,6 @@
+import json
 from dataclasses import dataclass, field
+from urllib.parse import unquote
 from typing import Any, Callable, Protocol
 
 
@@ -49,6 +51,9 @@ class MappingRules:
             "colors": "color_candidates",
             "colourways": "color_candidates",
             "colorDescription": "color_candidates",
+            "colorName": "color_candidates",
+            "hues": "color_candidates",
+            "swatchColors": "color_candidates",
         }
     )
     meta_key_to_field: dict[str, str] = field(
@@ -73,6 +78,11 @@ class MappingRules:
             "pricecurrency": "currency_candidates",
         }
     )
+    # Keys whose list/dict values should be JSON-serialized into raw_attributes
+    # (e.g. variants, options) so the LLM can build Variant objects.
+    structured_passthrough_keys: frozenset[str] = field(
+        default_factory=lambda: frozenset({"variants", "options", "option_groups"})
+    )
 
 
 def collect_candidates_from_node(
@@ -86,7 +96,15 @@ def collect_candidates_from_node(
         values = _collect_values_for_key(node, key)
         if image_transform and field_name == "image_url_candidates":
             values = [image_transform(v) for v in values]
+        elif field_name == "color_candidates":
+            values = [_decode_color_value(v) for v in values]
         sink.add_candidates(field_name, values)
+
+    # Capture structured passthrough (variants, options) — JSON-serialize for LLM
+    for key in rules.structured_passthrough_keys:
+        value = _find_structured_value(node, key)
+        if value is not None:
+            sink.add_raw_attribute(key, json.dumps(value))
 
     # Capture remaining primitive attributes (skip JSON-LD metadata and already-extracted keys)
     if isinstance(node, dict):
@@ -95,6 +113,33 @@ def collect_candidates_from_node(
             if _should_skip_raw_attribute(key, value, known_keys):
                 continue
             sink.add_raw_attribute(key, value)
+
+
+def _decode_color_value(value: str) -> str:
+    """URL-decode color values (e.g. Blizzard%2FDeep%20Navy -> Blizzard/Deep Navy)."""
+    try:
+        return unquote(value, errors="replace")
+    except Exception:
+        return value
+
+
+def _find_structured_value(node: Any, target_key: str) -> list | dict | None:
+    """Recursively find first list or dict value for target_key. Returns None if not found."""
+    if isinstance(node, dict):
+        if target_key in node:
+            val = node[target_key]
+            if isinstance(val, (list, dict)) and len(str(val)) < 100_000:
+                return val
+        for v in node.values():
+            found = _find_structured_value(v, target_key)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _find_structured_value(item, target_key)
+            if found is not None:
+                return found
+    return None
 
 
 def _should_skip_raw_attribute(key: str, value: Any, known_keys: set[str]) -> bool:

@@ -43,7 +43,7 @@ Rules:
 - image_urls: use only URLs from image_url_candidates. Do NOT invent or modify URLs.
 - key_features: extract a concise list of bullet-point features from key_feature_candidates
   or the description. Empty list is acceptable if none are present.
-- colors: use color_candidates. Empty list is acceptable if none are present.
+- colors: list ALL available color options from color_candidates. Include hex codes (e.g. #888888), colorway names (e.g. Red, Grey/Blue), and swatch names. Exclude entries that are product titles or variant names (e.g. "Product Name - Color / Size"). Deduplicate similar colors (e.g. "Red/White" and "White/Red" are the same). Empty list only if color_candidates is empty.
 - category: you MUST choose the exact string of one item from the numbered
   category list provided. Copy it character-for-character. Do not paraphrase.
 - variants: if option groups (e.g. sizes, colours) are present in raw_attributes,
