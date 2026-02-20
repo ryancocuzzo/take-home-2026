@@ -30,10 +30,15 @@ class _SignalParser(HTMLParser):
             self._script_attrs = attrs_dict
             self._script_chunks = []
             return
-        if tag != "meta":
-            return
 
-        key = (attrs_dict.get("property") or attrs_dict.get("name") or attrs_dict.get("itemprop") or "").strip()
+        if tag == "meta":
+            # Meta tags: accept property/name/itemprop as key
+            key = (attrs_dict.get("property") or attrs_dict.get("name") or attrs_dict.get("itemprop") or "").strip()
+        else:
+            # Non-meta elements: only accept itemprop + content (schema.org microdata)
+            # e.g. <span itemprop="price" content="29.95">
+            key = attrs_dict.get("itemprop", "").strip()
+
         content = (attrs_dict.get("content") or "").strip()
         if key and content:
             self.meta_tags.append(MetaSignal(key=key.lower(), content=html.unescape(content)))

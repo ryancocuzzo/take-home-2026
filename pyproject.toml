@@ -9,3 +9,15 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "rank-bm25>=0.2.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (LLM calls — run manually with -m slow)",
+]

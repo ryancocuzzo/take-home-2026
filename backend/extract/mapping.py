@@ -67,8 +67,10 @@ class MappingRules:
             "product:brand": "brand_candidates",
             "product:price:amount": "price_candidates",
             "og:price:amount": "price_candidates",
+            "price": "price_candidates",
             "product:price:currency": "currency_candidates",
             "og:price:currency": "currency_candidates",
+            "pricecurrency": "currency_candidates",
         }
     )
 

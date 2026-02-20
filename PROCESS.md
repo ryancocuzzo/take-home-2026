@@ -102,6 +102,14 @@ Setup instructions (backend + frontend). 1–2 paragraph system design write-up 
 | Gemini flash not available via OpenRouter | Fall back to `openai/gpt-4o-mini` |
 | Frontend time overrun | Cut variants display — catalog + PDP with image/price/description is the bar |
 
+### Quirks found during eval runs
+
+| Page | Symptom | Cause | Fix |
+|------|---------|-------|-----|
+| LLBean | `price = 0.0` | Pass 1 only read `itemprop` from `<meta>` tags; LLBean uses `<span itemprop="price" content="29.95">` | Extended `_SignalParser` to emit a signal for any element with both `itemprop` and `content` attributes |
+| Article | `price = 0.0` | Price is only in a DOM `<span class="regularPrice">` — no structured data | Accepted as a Pass 2 gap; eval test skips the price assertion for this page |
+| A Day's March | `ValidationError` on `compare_at_price` | LLM returned `"170\xa0USD"` instead of a bare float | Added `_coerce_price_string` validator on `Price` to extract the first numeric token from any string value |
+
 ---
 
 ## MVP2 — Extraction depth (deferred)

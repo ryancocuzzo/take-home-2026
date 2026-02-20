@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
@@ -27,11 +28,31 @@ class Category(BaseModel):
 class Price(BaseModel):
     price: float
     currency: str
-    # If a product is on sale, this is the original price
     compare_at_price: float | None = None
 
-# This is the final product schema that you need to output. 
-# You may add additional models as needed.
+    @field_validator("price", "compare_at_price", mode="before")
+    @classmethod
+    def _coerce_price_string(cls, v: object) -> object:
+        """
+        Extract a numeric value from LLM output that may include currency symbols,
+        codes, or non-breaking spaces (e.g. "170\xa0USD", "$29.95", "EUR 49").
+        """
+        if v is None or isinstance(v, (int, float)):
+            return v
+        if isinstance(v, str):
+            match = re.search(r"\d+(?:[.,]\d+)?", v.replace("\xa0", " "))
+            if match:
+                return float(match.group().replace(",", "."))
+        return v
+
+
+class Variant(BaseModel):
+    name: str
+    attributes: dict[str, str] = Field(default_factory=dict)
+    price: Price | None = None
+    availability: str | None = None
+
+
 class Product(BaseModel):
     name: str
     price: Price
@@ -42,7 +63,7 @@ class Product(BaseModel):
     category: Category
     brand: str
     colors: list[str]
-    variants: list[Any] # TODO (@dev): Define variant model
+    variants: list[Variant] = Field(default_factory=list)
 
 
 class ExtractionContext(BaseModel):

@@ -168,7 +168,11 @@ The LLM is *not* responsible for HTML parsing, URL resolution, or deduplication.
 
 If the `Category` validator raises (LLM chose a string not in the taxonomy), the call retries once with the validation error appended to the prompt.
 
-**Trade-offs:** Structured output is reliable on modern models but not perfect. The retry-once strategy handles transient failures without building a full retry loop that would hide systematic prompt issues. Flash-lite is cheap (~$0.005/call); if quality degrades on complex pages, the escalation path is flash-full, not a rewrite.
+**Prompt design:** System message carries invariant rules; user message carries the variable data (numbered category list + `ExtractionContext` as JSON). Stable rules separated from data makes prompt changes easy to diff. The category list is numbered and the model is instructed to copy the chosen string character-for-character — this minimises the paraphrasing that would fail the taxonomy validator.
+
+**Retry strategy:** Retry once on `ValidationError` with the error appended. One retry covers the common case (category mismatch); a loop would hide systematic prompt problems that need fixing, not more attempts.
+
+**Trade-offs:** Structured output is reliable on modern models but not perfect. Flash-lite is cheap (~$0.005/call); if quality degrades on complex pages, the escalation path is flash-full, not a rewrite.
 
 **Failure modes:**
 - Structured output parse error: retry once; if still failing, return partial product with empty `key_features` and `variants`.
@@ -231,6 +235,6 @@ If the `Category` validator raises (LLM chose a string not in the taxonomy), the
 | `AttributesTable` | **MVP3** | Display enhancement |
 | Semantic embedding retrieval | **Cut** | BM25 covers the use case; embeddings add latency and a model dependency |
 | Per-variant image/price linking | **Cut** | Requires per-variant script blob mining; diminishing return |
-| Microdata parsing | **Cut** | JSON-LD covers the same pages better |
+| Microdata parsing | **Partial** | Added for `itemprop`+`content` elements only; full microdata graph traversal is cut |
 | Evidence/provenance tracking | **Cut** | No payoff at this scope |
 | Debug drawer in UI | **Cut** | Not asked for |
