@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.assemble import assemble_product
+from backend.assemble.assemble import assemble_product
 from backend.extract.structured_extraction import extract_structured_signals
 from backend.taxonomy.prefilter import select_category_candidates
 from models import VALID_CATEGORIES, Product

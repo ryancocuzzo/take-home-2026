@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 
-from backend.assemble import assemble_product, build_prompt
+from backend.assemble.assemble import assemble_product, build_prompt
 from models import Category, ExtractionContext, Price, Product, Variant
 
 
@@ -138,7 +138,7 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
     async def test_returns_product_on_first_success(self) -> None:
         valid_product = _make_valid_product()
 
-        with patch("backend.assemble.ai.responses", new=AsyncMock(return_value=valid_product)):
+        with patch("backend.assemble.assemble.ai.responses", new=AsyncMock(return_value=valid_product)):
             result = await assemble_product(self.context, self.candidates)
 
         self.assertEqual(result.name, "Test Drill")
@@ -149,7 +149,7 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
 
         mock_responses = AsyncMock(side_effect=[validation_error, valid_product])
 
-        with patch("backend.assemble.ai.responses", new=mock_responses):
+        with patch("backend.assemble.assemble.ai.responses", new=mock_responses):
             result = await assemble_product(self.context, self.candidates)
 
         self.assertEqual(mock_responses.call_count, 2)
@@ -161,7 +161,7 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
 
         mock_responses = AsyncMock(side_effect=[validation_error, valid_product])
 
-        with patch("backend.assemble.ai.responses", new=mock_responses):
+        with patch("backend.assemble.assemble.ai.responses", new=mock_responses):
             await assemble_product(self.context, self.candidates)
 
         # Second call's input (messages) should contain the error string
@@ -175,7 +175,7 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
 
         mock_responses = AsyncMock(side_effect=[validation_error, validation_error])
 
-        with patch("backend.assemble.ai.responses", new=mock_responses):
+        with patch("backend.assemble.assemble.ai.responses", new=mock_responses):
             with self.assertRaises(ValidationError):
                 await assemble_product(self.context, self.candidates)
 
