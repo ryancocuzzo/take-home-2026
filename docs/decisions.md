@@ -84,6 +84,6 @@ These were considered and deliberately excluded.
 
 Built and validated one complete end-to-end slice (HTML in → Product JSON → API → UI) before adding depth. This means the pipeline was always in a working state, and scope cuts were informed by actual output quality rather than speculation.
 
-### Why separate DESIGN.md and PROCESS.md
+### Why separate design.md and process.md
 
-`DESIGN.md` captures the *what and why* of the architecture. `PROCESS.md` captures the *how and when* of execution — time budgets, done gates, risks. Keeping them separate means the design doc stays useful as a reference after the project is done, while the process doc is a snapshot of the build approach.
+[design.md](design.md) captures the *what and why* of the architecture. [process.md](process.md) captures the *how and when* of execution — time budgets, done gates, risks. Keeping them separate means the design doc stays useful as a reference after the project is done, while the process doc is a snapshot of the build approach.
