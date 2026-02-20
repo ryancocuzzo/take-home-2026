@@ -20,7 +20,7 @@ export function PriceDisplay({ price, size = "sm" }: PriceDisplayProps) {
 
   return (
     <div className="flex items-baseline gap-2">
-      <span className={`${mainSize} ${isOnSale ? "text-red-600" : "text-foreground"}`}>
+      <span className={`${mainSize} ${isOnSale ? "text-destructive" : "text-foreground"}`}>
         {formatPrice(price.price, price.currency)}
       </span>
       {isOnSale && (

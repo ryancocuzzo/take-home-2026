@@ -12,30 +12,32 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
   return (
     <Link
       href={`/products/${product.id}`}
-      className="group flex flex-col rounded-xl border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200"
+      className="group flex flex-col overflow-hidden"
     >
-      <div className="relative aspect-square bg-muted overflow-hidden">
+      <div className="relative aspect-[4/5] overflow-hidden bg-muted">
         {product.image_url ? (
           <Image
             src={product.image_url}
             alt={product.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-            className="object-cover group-hover:scale-105 transition-transform duration-300"
+            className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.02]"
             priority={priority}
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             No image
           </div>
         )}
       </div>
-      <div className="flex flex-col gap-1 p-4">
-        <p className="text-xs text-muted-foreground uppercase tracking-wide">{product.brand}</p>
-        <h2 className="text-sm font-medium leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+      <div className="mt-4 flex flex-col gap-1">
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          {product.brand}
+        </p>
+        <h2 className="line-clamp-2 text-sm font-medium leading-snug text-foreground transition-colors group-hover:text-primary">
           {product.name}
         </h2>
-        <div className="mt-1">
+        <div className="mt-2">
           <PriceDisplay price={product.price} />
         </div>
       </div>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { getProduct } from "@/lib/api";
 import { ImageGallery } from "@/components/image-gallery";
 import { PriceDisplay } from "@/components/price-display";
@@ -7,6 +8,19 @@ import { Badge } from "@/components/ui/badge";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params;
+  try {
+    const product = await getProduct(id);
+    return {
+      title: `${product.name} | Curated`,
+      description: product.description?.slice(0, 160) ?? undefined,
+    };
+  } catch {
+    return { title: "Product | Curated" };
+  }
 }
 
 export default async function ProductPage({ params }: PageProps) {
@@ -27,11 +41,11 @@ export default async function ProductPage({ params }: PageProps) {
   const namedColors = product.colors.filter((c) => !/^#[0-9a-fA-F]{3,6}$/.test(c));
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto px-4 py-8">
+    <main className="min-h-screen">
+      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
         <Link
           href="/"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
+          className="mb-10 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -47,21 +61,23 @@ export default async function ProductPage({ params }: PageProps) {
           >
             <path d="m15 18-6-6 6-6" />
           </svg>
-          Back to catalog
+          Back to shop
         </Link>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 lg:gap-16">
+        <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-16">
           <ImageGallery images={product.image_urls} alt={product.name} />
 
-          <div className="flex flex-col gap-6">
-            <div>
-              <p className="text-sm text-muted-foreground uppercase tracking-wide mb-1">
+          <div className="flex flex-col">
+            <div className="mb-6">
+              <p className="mb-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
                 {product.brand}
               </p>
-              <h1 className="text-2xl lg:text-3xl font-bold leading-tight">{product.name}</h1>
+              <h1 className="font-display text-2xl font-semibold leading-tight text-foreground lg:text-3xl">
+                {product.name}
+              </h1>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="mb-8 flex items-center gap-3">
               <PriceDisplay price={product.price} size="lg" />
               {isOnSale && (
                 <Badge variant="destructive" className="text-xs">
@@ -71,18 +87,22 @@ export default async function ProductPage({ params }: PageProps) {
             </div>
 
             {product.description && (
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Description</h2>
-                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+              <div className="mb-8">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-foreground">
+                  Description
+                </h2>
+                <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
                   {product.description}
                 </p>
               </div>
             )}
 
             {product.key_features.length > 0 && (
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Features</h2>
-                <ul className="list-disc list-inside space-y-1">
+              <div className="mb-8">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-foreground">
+                  Details
+                </h2>
+                <ul className="space-y-2">
                   {product.key_features.map((f, i) => (
                     <li key={i} className="text-sm text-muted-foreground">
                       {f}
@@ -93,13 +113,15 @@ export default async function ProductPage({ params }: PageProps) {
             )}
 
             {(hexColors.length > 0 || namedColors.length > 0) && (
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wide mb-2">Colors</h2>
+              <div className="mb-8">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-foreground">
+                  Colors
+                </h2>
                 <div className="flex flex-wrap gap-2">
                   {hexColors.map((color) => (
                     <div
                       key={color}
-                      className="w-7 h-7 rounded-full border border-border shadow-sm"
+                      className="h-8 w-8 shrink-0 rounded-full border border-border"
                       style={{ backgroundColor: color }}
                       title={color}
                     />
@@ -113,9 +135,9 @@ export default async function ProductPage({ params }: PageProps) {
               </div>
             )}
 
-            <div>
+            <div className="mt-auto border-t border-border/60 pt-6">
               <p className="text-xs text-muted-foreground">
-                Category: {product.category.name}
+                {product.category.name}
               </p>
             </div>
           </div>
