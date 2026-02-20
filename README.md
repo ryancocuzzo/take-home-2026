@@ -12,7 +12,7 @@ Extracts structured product data from arbitrary HTML product pages — no site-s
 cp .env.example .env          # add your OPEN_ROUTER_API_KEY
 uv sync
 uv run python seed.py         # extract products from HTML (~30s, needs API key)
-uv run uvicorn backend.api.api:app --port 8000
+make backend
 ```
 
 ### Frontend
@@ -20,7 +20,7 @@ uv run uvicorn backend.api.api:app --port 8000
 ```bash
 cd frontend
 npm install
-npm run dev                   # http://localhost:3000
+make frontend                   # http://localhost:3000
 ```
 
 ## How It Works
