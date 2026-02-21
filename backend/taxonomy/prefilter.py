@@ -3,9 +3,9 @@ Taxonomy prefilter: fast keyword-based candidate selection.
 
 THE PROBLEM
 -----------
-We have ~5,000 job categories ("Software Development > Backend", "Marketing > SEO", etc.)
-and an incoming job posting. We can't send all 5,000 categories to the LLM — it's too slow
-and expensive. We need to narrow it down to ~20 plausible candidates first.
+Google's product taxonomy has ~5,600 categories ("Apparel & Accessories > Shoes", etc.)
+and an incoming product page. Sending all 5,600 categories to the LLM every call is
+too slow and expensive. We need to narrow them down to ~20 plausible candidates first.
 
 THE APPROACH: BM25
 ------------------
@@ -19,7 +19,7 @@ It improves on raw TF-IDF in two ways:
   Document length normalisation: shorter documents aren't penalised just for being short.
     A short category label "Shoes" can still score well against a long one.
 
-Each category label is treated as a small document. The job posting signals
+Each category label is treated as a small document. The product signals
 (title, brand, category hints) form the query. BM25 scores how well each
 category matches that query. We return the top_k highest-scoring categories.
 
@@ -87,12 +87,12 @@ def select_category_candidates(
     This is the main entry point. It orchestrates all steps:
       1. Resolve the category list to search against.
       2. Build (or reuse a cached) BM25 index over those categories.
-      3. Convert the job posting context into a query token list.
+      3. Convert the product context into a query token list.
       4. Score every category via BM25.
       5. Return the top-k unique results, or fall back if nothing matched.
 
     Args:
-        context:    Signals extracted from the job posting (title, brand, category hints).
+        context:    Signals extracted from the product page (title, brand, category hints).
         categories: Explicit list of categories to rank. Defaults to all VALID_CATEGORIES.
         top_k:      Maximum number of candidates to return.
     """
@@ -153,8 +153,8 @@ def _build_query_terms(context: ExtractionContext) -> list[str]:
     """
     Flatten the most informative fields from the extraction context into a list of tokens.
 
-    We cap the number of candidates per field to prevent any single noisy signal
-    from drowning out the others (e.g. 10 title candidates vs 2 brand candidates).
+    Caps candidates per field to prevent any single noisy signal from drowning out
+    the others (e.g. 10 title candidates vs 2 brand candidates).
     """
     values: list[str] = []
     values.extend(context.title_candidates[:3])
@@ -238,8 +238,8 @@ def _fallback_categories(categories: tuple[str, ...], top_k: int) -> list[str]:
       Pass 2 — if we still need more, fill remaining slots with full category paths
                that weren't already included.
 
-    Example (top_k=3, categories include many "Software Development > *" entries):
-        Pass 1 yields: ["Software Development", "Marketing", "Design"]
+    Example (top_k=3, categories include many "Apparel & Accessories > *" entries):
+        Pass 1 yields: ["Apparel & Accessories", "Electronics", "Sporting Goods"]
         (three different top-level segments, not three sub-paths of the same one)
     """
     if top_k <= 0:

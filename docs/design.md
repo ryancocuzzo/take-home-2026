@@ -1,240 +1,114 @@
-# Design
+# Discussion Guide
 
-> **MVP annotations:** Each component is tagged **[MVP1]**, **[MVP2]**, or **[MVP3]**.
-> MVP1 is the end-to-end happy path. MVP2 adds extraction depth. MVP3 adds polish.
-
-## What this solves
-
-Given raw HTML for an arbitrary product detail page, produce a fully structured `Product` — name, price, images, variants, category, attributes — without any site-specific logic. The output must conform to a strict schema validated at runtime.
-
-The hard parts: product data is scattered across JSON-LD, meta tags, embedded JS blobs, and the DOM with no consistency between sites. Category must match Google's 5,600-line taxonomy exactly. Variants have no standard representation.
+Quick-reference for the system discussion. Crisp answers to the questions most likely to come up.
 
 ---
 
-## Workflow
+## The pitch (2 sentences)
 
-### MVP1 pipeline
-
-```
-Raw HTML
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Structured Signal Extraction (Pass 1)     [MVP1]           │
-│  JSON-LD → meta tags → script blobs                         │
-│  Deterministic. No LLM. Cheap.                              │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-                  ExtractionContext
-              (intermediate bag of candidates)
-                           │
-              ┌────────────┴────────────┐
-              │                         │
-              ▼                         ▼
-  Taxonomy Pre-filter          (context passed through)
-  token overlap → top 20            [MVP1]
-  category candidates
-              │                         │
-              └────────────┬────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  LLM Assembler                             [MVP1]           │
-│  Structured output → Product                                │
-│  Selects best candidates, assigns category, builds variants │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-                    Product (JSON)
-                           │
-               ┌───────────┴───────────┐
-               │                       │
-               ▼                       ▼
-        data/products/            FastAPI [MVP1]
-          {id}.json            /products (read-only)
-                                       │
-                                       ▼
-                                  React UI [MVP1]
-                             Catalog  ·  PDP
-```
-
-### MVP2 addition
-
-```
-Structured Signal Extraction (Pass 1) output
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Pass 2 · DOM Extraction                   [MVP2]           │
-│  Image priority ladder → option groups → visible text       │
-│  Heuristic. Fills gaps left by Structured Signal Extraction │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-              ExtractionContext (enriched)
-```
-
-### MVP3 addition
-
-```
-  POST /extract endpoint                     [MVP3]
-  Skeleton states, error boundaries          [MVP3]
-  Responsive polish                          [MVP3]
-```
+This is a generalized product data extraction pipeline: given raw HTML from any product page, it produces a validated `Product` with no site-specific logic anywhere in the codebase. The hard problems are that product data is scattered across JSON-LD, meta tags, JS blobs, and the DOM with no consistency between sites, and the output category must exactly match one of Google's 5,600 taxonomy entries.
 
 ---
 
-## Components
+## Why multi-pass, not LLM-everything?
 
-### Structured Signal Extraction (Pass 1) [MVP1]
+This is the most likely first question. Three reasons:
 
-Pulls from three signal sources in priority order: JSON-LD, meta tags, embedded script blobs. All three are parsed unconditionally — there's no site detection.
+**1. Cost and scale.** A modern product page can be 500KB+ of HTML. Token cost is linear with input size. At $0.005/call for the current model, LLM-everything on 500KB HTML would be 100× more expensive per product — and would scale to hundreds of millions of dollars at 50M products. Deterministic parsing is effectively free.
 
-JSON-LD is the richest source when present. It's explicit, typed, and standardized. Meta tags are a reliable fallback for title, description, and primary image. Script blobs handle the case where a site bundles its full product state into `window.__INITIAL_STATE__` or similar — LLBean is an example. The pattern (`window.__FOO__ = {...}`) is generic enough to cover most SPAs without any site-specific logic.
+**2. Reproducibility.** Deterministic bugs (wrong price extracted, missing images) are reproducible and fixable without an API key. If the LLM handles everything, every failure looks the same from the outside, and root-causing requires expensive LLM calls.
 
-All image URLs are resolved to absolute and deduplicated by normalized URL (resize params stripped). Deduplication happens here, not in the LLM.
+**3. Division of labor.** The LLM is good at semantic disambiguation: "which of these three title candidates is the most accurate?" It is not better than a regex at pulling a float out of a JSON-LD `"price"` field. Don't use a model for work that deterministic code does better, faster, and reproducibly.
 
-**Trade-offs:** This pass is cheap and deterministic but produces *candidates*, not a product. It doesn't try to pick the best title or resolve ambiguity — that's the LLM's job. The split matters: don't ask deterministic code to do semantic reasoning.
-
-**Failure modes:**
-- JS-rendered pages (fetched via curl): JSON-LD and meta are usually still present in the raw HTML. Script blobs may be absent if the bundle loads asynchronously. Output is sparse but valid.
-- Malformed JSON in script blobs: caught and skipped, not a fatal error.
-- Relative image URLs with unusual base paths: resolved against the page URL; if the URL wasn't provided, images may resolve incorrectly.
+**The split:** Pass 1 and Pass 2 do all the parsing. The LLM resolves ambiguity and handles the things that genuinely require reasoning (semantic category selection, brand inference from context, variant assembly from sparse signals).
 
 ---
 
-### Pass 2 — DOM extraction [MVP2]
+## Key decisions — quick reference
 
-A heuristic pass that runs after Structured Signal Extraction (Pass 1) and fills in what structured data missed. Two jobs: images and option groups.
-
-Images follow a priority ladder (`data-zoom` → `srcset` max resolution → `data-src` → `src`). URLs containing `large / hires / 2048 / 1024` are ranked above thumbnails. Nav icons, logos, and tracking pixels (inferred from URL path or small dimensions) are filtered out.
-
-Option groups are extracted from `<select>`, radio/checkbox groups, and basic ARIA listboxes. This covers the vast majority of variant selectors without trying to reverse-engineer every possible chip/toggle pattern.
-
-**Trade-offs:** Heuristics are fragile by nature. The ladder covers the common patterns; it won't cover every site. The deliberate choice is to stop before it becomes a maintenance burden — DOM heuristics past a certain depth cost more to maintain than the edge cases justify.
-
-**Failure modes:**
-- Sites with lazy-loaded images: `data-src` is the catch; if images are injected purely via JS after render, they won't appear in the raw HTML at all. Output will be image-sparse.
-- Non-standard variant UIs (custom web components, canvas-rendered): option groups will be empty. Variants are modeled from whatever option groups exist; if none, `variants` is `[]`, which is valid.
-
----
-
-### ExtractionContext [MVP1]
-
-The intermediate bag passed between passes and into the assembler. It holds *lists of candidates*, not resolved values. Title might have three candidates; images might have fifteen. Nothing is decided yet.
-
-This design isolates the extraction passes from the assembly step. Either pass can be changed or replaced without touching the other or the LLM prompt.
-
-**Trade-offs:** It's intentionally loose — `dict` for attributes, plain strings for price candidates. Strict typing here would require mapping every site's structure to a schema before the LLM has had a chance to resolve it, which inverts the dependency.
-
-**Failure modes:**
-- Empty context (all passes fail): assembler receives empty candidate lists. LLM will return a nearly empty Product. The `name` and `price` fields are required; if truly absent, the pipeline raises and the product is skipped.
+| Decision | Reasoning |
+|----------|-----------|
+| Multi-pass pipeline | Deterministic extraction is cheap and testable without an API key. LLM only does semantic work. |
+| `ExtractionContext` as candidate bag | Multiple passes write candidates; nothing is resolved prematurely. Passes are fully independent. |
+| BM25 for taxonomy pre-filter | `rank_bm25` is a focused dependency. scikit-learn pulls in numpy+scipy for one function. Embeddings add latency and a model dependency for marginal improvement when the LLM makes the final call. |
+| Category by index, not free text | LLM occasionally paraphrases category strings (e.g. "Trousers" vs "Pants"). Outputting a 1-based index and mapping it post-response eliminates that failure mode entirely. |
+| Single retry on `ValidationError` | One retry covers the common case (category mismatch, price format). A loop hides systematic prompt bugs that need fixing, not more attempts. |
+| `gemini-2.0-flash-lite` at ~$0.005/call | Sufficient quality for structured assembly. Escalation path is flash-full, not a pipeline rewrite. |
+| `networkx` for identity clustering | `nx.connected_components` handles transitive matching (A↔B and B↔C → one cluster) in 2 lines vs ~25 lines of DFS state management. |
+| Flat JSON files for storage | Correct at 7 products. Acknowledged trade-off — inverts at ~10K where indexed queries and concurrent writes matter. |
+| No site-specific logic anywhere | Zero conditionals on domain, XPath selectors, or page-specific prompt hints. The system must generalize to unseen sites. Any conditional would break this guarantee. |
 
 ---
 
-### Taxonomy pre-filter [MVP1]
+## Bugs worth discussing
 
-`categories.txt` has ~5,600 lines. Passing all of them to the LLM every call is expensive and noisy. The pre-filter reduces this to ~20 candidates using BM25 scoring (`rank-bm25`) against the product title, brand, and top breadcrumb term.
+These are the most interesting because each one revealed a real design constraint. See [decisions.md](decisions.md) for the full list with causes and fixes.
 
-BM25 improves on raw token overlap in two ways: term saturation (repeating a word gives diminishing returns) and document-length normalisation (short category labels aren't penalised). The BM25 index is built once per unique category set and cached. If the top candidate scores 0 (completely unrecognized product), the filter returns top-level category segments as a broader fallback.
+### 1. `@lru_cache` on `AsyncOpenAI` client
 
-**Trade-offs:**
-- BM25 v. Scikit-learn v. hand-rolled pre-filter
-  - Hand-rolled
-    - Pros: No additional dependencies
-    - Cons: requires maintaining a non-trivial amount of math logic
-  - Scikit-learn
-    - Pros: Easy to implement. Great community support.
-    - Cons: Huge dependency add because requires numpy & scipy, which we dont need.
-  - BM25
-    - Pros: Easy to implement. Small, focused dependency.
-    - Cons: Less community support because more niche.
-- BM25 is still keyword-based — it won't rank "Apparel & Accessories > Shoes" above "Apparel & Accessories > Clothing" for a sneaker without the word "shoes" appearing. The pre-filter only needs to get the right answer into the top 20; the LLM makes the final call.
+Cached the AI client to avoid recreating it. But `asyncio.run()` creates a new event loop each call in the test suite, and the cached client held connections from the closed loop → `RuntimeError: Event loop is closed` during httpx cleanup. **Fix:** removed the cache — fresh client per call, correctly scoped to the active loop. The "optimization" was a correctness bug. Only surfaced in tests (multiple `asyncio.run()` calls per process), not in the seed script (single `asyncio.run()` total).
 
-**Failure modes:**
-- No overlap with any category: fallback to broad segments. The LLM will pick the closest one, which may be imprecise but will be valid.
-- Brand name matches unrelated category tokens: might surface irrelevant candidates. Rarely matters — the LLM ignores bad candidates when better ones are present.
+### 2. Shopify variants not extracted (Allbirds)
 
----
+`iter_assigned_json_blobs` only matched `window.__FOO__` patterns. Shopify uses `var meta = {...}`. Separately, `_should_skip_raw_attribute` silently dropped list/dict values from `raw_attributes`, so even when the blob was found, the `variants` array was discarded. **Fix:** extended regex to cover `var/let/const` assignments; added `structured_passthrough_keys` to preserve list/dict values as JSON-serialized strings for the LLM.
 
-### LLM assembler [MVP1]
+### 3. L.L.Bean price extracted as $0.00
 
-A single async call to `gemini-2.0-flash-lite` using structured output (`text_format=Product`). The prompt provides the full `ExtractionContext` as JSON and the top 20 category candidates as a numbered list.
+Pass 1 only read `itemprop` from `<meta>` tags. L.L.Bean uses `<span itemprop="price" content="29.95">` — a non-meta element. **Fix:** extended the signal parser to emit for any element with both `itemprop` and `content` attributes. Generic fix — covers any site using microdata-style markup on non-meta elements.
 
-The LLM is responsible for: selecting the best title, description, and brand from candidates; picking the exact category string from the candidate list; building `Variant` objects from option groups (cartesian product, capped at 50); normalizing price strings into `Price`.
+### 4. LLM returned `"170\xa0USD"` for `compare_at_price`
 
-The LLM is *not* responsible for HTML parsing, URL resolution, or deduplication. Those are done before the LLM sees anything.
+Non-breaking space and currency code instead of a bare float. The Pydantic `float` validator rejected it. **Fix:** `_coerce_price_string` field validator on `Price` extracts the first numeric token from any string. Defensive at the model boundary, not relying on the LLM always formatting correctly.
 
-If the `Category` validator raises (LLM chose a string not in the taxonomy), the call retries once with the validation error appended to the prompt.
+### 5. Variants are a partial snapshot, not a full product matrix
 
-**Prompt design:** System message carries invariant rules; user message carries the variable data (numbered category list + `ExtractionContext` as JSON). Stable rules separated from data makes prompt changes easy to diff. The category list is numbered and the model is instructed to copy the chosen string character-for-character — this minimises the paraphrasing that would fail the taxonomy validator.
-
-**Retry strategy:** Retry once on `ValidationError` with the error appended. One retry covers the common case (category mismatch); a loop would hide systematic prompt problems that need fixing, not more attempts.
-
-**Trade-offs:** Structured output is reliable on modern models but not perfect. Flash-lite is cheap (~$0.005/call); if quality degrades on complex pages, the escalation path is flash-full, not a rewrite.
-
-**Failure modes:**
-- Structured output parse error: retry once; if still failing, return partial product with empty `key_features` and `variants`.
-- LLM hallucates an image URL not in the context: prompt explicitly instructs it not to; still possible. Downstream image loading will 404.
-- Wrong category after retry: logged and skipped. The validator is the gate — nothing invalid passes through.
+`product.colors` comes from swatch data — all colors the product line offers. `product.variants` comes from the active variant blob on the scraped page — only sizes for the one color that was loaded. The correct model would be `colorways: [{color, image_urls, sizes}]`, but building that requires fetching each color's page separately (22 API calls for Allbirds alone). Deferred. The UI only shows non-color variant attributes to avoid implying all sizes apply to all colors.
 
 ---
 
-### Storage — flat JSON files [MVP1]
+## Scaling answer (key points)
 
-`data/products/{id}.json` where `id = sha256(url)[:12]`. No database. The seed script writes these; the API reads them.
+See README system design for the full write-up. Quick summary:
 
-**Trade-offs:** Correct for this scope. A database would add setup, migrations, and a dependency for no benefit when the dataset is six products. The tradeoff inverts at ~10,000 products where scan time and concurrent write safety matter.
+**What scales today:**
+- Pipeline is linear in cost (~$0.005/product) — 50M products is ~$250K in inference, viable for a batch job
+- BM25 index is built once and cached — negligible overhead at any corpus size
+- Async pipeline with `asyncio.gather` parallelizes naturally
 
-**Failure modes:**
-- Concurrent writes to the same file (unlikely at this scale): last write wins. No corruption risk on POSIX filesystems for atomic rename-based writes.
-- Disk full: write fails with an OS error. Not handled — out of scope.
+**What breaks at scale:**
+- Flat JSON → need Postgres with JSONB (or a document store) at ~10K products for indexed queries and concurrent writes
+- `asyncio.gather` → need a distributed task queue (Celery, Cloud Tasks) with rate limiting against upstream sites and the LLM provider
+- HTML fetching is out of scope here (we work from pre-fetched files) — at scale it's the real bottleneck: politeness controls, retry logic, change detection, deduplication
+- Identity resolution is O(n²) pairwise comparisons — needs blocking/LSH strategies at scale
 
----
-
-### FastAPI [MVP1 — read-only; MVP3 — POST /extract]
-
-**MVP1:** Two routes: `GET /products` (reads all JSON files, returns summaries), `GET /products/{id}` (reads one file, returns Product). The API layer contains no business logic. Extraction lives in `backend/extract/`, the API is just HTTP plumbing.
-
-**MVP3 addition:** `POST /extract` (runs pipeline, writes file, returns Product).
-
-**Trade-offs:** Synchronous reads on the GET routes are fine at this scale. `POST /extract` (when added) is async because the LLM call is I/O-bound.
-
-**Failure modes:**
-- `GET /products/{id}` with unknown ID: 404.
-- Corrupted JSON file: parse error surfaced as 500. No partial recovery — the file should be re-seeded.
+**Agentic API additions:**
+- Structured filters (`?category=&brand=&price_max=&in_stock=true`) backed by indexed fields
+- Semantic search endpoint (NL query → filtered + reranked results, not model-only retrieval)
+- Webhook/streaming for new products as they're extracted (no polling required)
+- Comparison endpoint: structured diff between products for "compare these two" flows
+- OpenAPI spec + typed SDKs so agent frameworks (LangChain, Vercel AI SDK) can call the API as a tool with zero glue code
 
 ---
 
-### Frontend [MVP1 — core; MVP2 — variants/gallery upgrade; MVP3 — polish]
+## What I'd tackle next
 
-**MVP1:** Two pages. Catalog at `/` renders a `ProductCard` grid fetched from `GET /products`. Detail at `/products/:id` renders image gallery, price, description, and variants (if any) from `GET /products/{id}`. shadcn components for all UI primitives.
+In priority order if this became a real product:
 
-**MVP2 additions:** `VariantsPanel` with attribute pill selectors. `ImageGallery` with full-res zoom and better thumbnail handling.
-
-**MVP3 additions:** Skeleton loading states. Responsive layout tuning. `AttributesTable` for `raw_attributes`. Error boundaries.
-
-**Trade-offs:** The data is pre-seeded; the frontend is read-only. This is the right call — adding upload/extract UI to the frontend would complicate both the UI and the API contract without being part of what's being evaluated.
-
-**Failure modes:**
-- API is not running: fetch errors surfaced as empty state, not crash.
-- Product has no images: `ImageGallery` renders a placeholder.
-- Variants array is empty: `VariantsPanel` is not rendered. No empty state needed.
+1. **Idempotent processing** — content hash as idempotency key; skip unchanged pages; safe reindex without taking reads offline
+2. **Canonical commerce model** — split `Product` into `Product` (identity) + `Merchant` + `Offer` (merchant-scoped price/availability/promo/shipping). The current schema has `offers` on `Product` but extraction still produces legacy product-level fields.
+3. **Query surface** — deterministic filters first (category, brand, price, variant attributes), then semantic rerank on the filtered set. Never model-only retrieval for a shopping catalog.
+4. **Field-level provenance** — `(value, source, confidence)` on extraction outputs; answers "why this category/price/title?" in debugging and internal tooling
+5. **Eval regression gate** — golden outputs per retailer, CI fails on meaningful score regressions; adding a new retailer doesn't silently degrade existing ones
 
 ---
 
-## What is deferred vs cut
+## What was cut and why
 
-| Item | Status | Reason |
-|------|--------|--------|
-| Pass 2: DOM extraction | **MVP2** | Quality improvement; not needed for happy path |
-| Rich variant selectors | **MVP2** | Requires option group parsing from Pass 2 |
-| `POST /extract` endpoint | **MVP3** | Seed script covers extraction; API stays read-only in MVP1 |
-| Skeleton loading states | **MVP3** | Polish — not blocking |
-| `AttributesTable` | **MVP3** | Display enhancement |
-| Semantic embedding retrieval | **Cut** | BM25 covers the use case; embeddings add latency and a model dependency |
-| Per-variant image/price linking | **Cut** | Requires per-variant script blob mining; diminishing return |
-| Microdata parsing | **Partial** | Added for `itemprop`+`content` elements only; full microdata graph traversal is cut |
-| Evidence/provenance tracking | **Cut** | No payoff at this scope |
-| Debug drawer in UI | **Cut** | Not asked for |
+| Item | Decision | Reason |
+|------|----------|--------|
+| Semantic embeddings for taxonomy | Cut | BM25 covers the use case. Embeddings add latency and a model dependency for marginal recall improvement when LLM makes the final call. |
+| Per-variant image/price linking | Cut | Requires fetching each color's page. Diminishing return — most sites don't expose this in structured data. |
+| Full microdata graph traversal | Partial | Added for `itemprop`+`content` elements. Full traversal is significant parser complexity for limited additional signal. |
+| Evidence/provenance tracking | Deferred | No user-facing payoff at this scope; first step for MVP3. |
+| `POST /extract` endpoint | Deferred | Seed script handles extraction. API stays read-only — no additional contract complexity needed for evaluation. |
+| Pass 2 DOM image priority ladder | Deferred | Image coverage from Pass 1 is sufficient for the corpus. Heuristic image laddering is meaningful work with diminishing returns past a certain depth. |

@@ -1,112 +1,124 @@
 # Design Decisions & Development Notes
 
-Engineering trade-offs, bugs encountered, and scope decisions made during development.
+Engineering trade-offs, bugs encountered, and scope decisions made during development. For the high-level architecture and decision rationale, see [architecture.md](architecture.md) and [design.md](design.md).
 
 ---
 
 ## Bugs Found During Eval Runs
 
-These are real issues discovered by running the pipeline against all 5 product pages and inspecting the output. Each one led to a targeted fix.
+These are real issues discovered by running the pipeline against all product pages and inspecting output. Each led to a targeted fix — none required structural changes to the pipeline.
 
-### L.L.Bean: price extracted as $0.00
+### `@lru_cache` on `AsyncOpenAI` client (Ace Hardware)
+
+**Symptom:** `RuntimeError: Event loop is closed` during httpx cleanup, surfaced as `APIConnectionError` in eval tests.
+
+**Cause:** An `@lru_cache` decorator on the `AsyncOpenAI` client constructor. The cached client was bound to the first `asyncio.run()` event loop. When pytest ran subsequent test cases (each calling `asyncio.run()`), the cached client still held connections from the now-closed loop.
+
+**Fix:** Removed the `@lru_cache`. The client is cheap to create — a fresh instance per call is correctly scoped to the active event loop. The "optimization" was a correctness bug. The issue only manifests when multiple `asyncio.run()` calls share a process (tests), not in the seed script (one `asyncio.run()` total).
+
+---
+
+### L.L.Bean price extracted as $0.00
 
 **Symptom:** `price = 0.0` on the L.L.Bean product.
 
 **Cause:** Pass 1 only read `itemprop` from `<meta>` tags. L.L.Bean uses `<span itemprop="price" content="29.95">` — a non-meta element with both `itemprop` and `content` attributes.
 
-**Fix:** Extended the signal parser to emit a signal for any HTML element with both `itemprop` and `content` attributes, not just `<meta>` tags. This is generic — it covers any site using microdata-style markup on non-meta elements.
+**Fix:** Extended the signal parser to emit a price signal for any HTML element with both `itemprop` and `content` attributes, not just `<meta>` tags. Generic fix — covers any site using microdata-style markup on non-meta elements.
 
-### Article: price extracted as $0.00
+---
 
-**Symptom:** `price = 0.0` on the Article floor lamp.
+### Article floor lamp: price extracted as $0.00
 
-**Cause:** The price exists only in a DOM `<span class="regularPrice">` — no JSON-LD, no meta tags, no structured data at all. Pass 1 has no way to see it.
+**Symptom:** `price = 0.0` on the Article product.
 
-**Fix:** Accepted as a known gap. This is exactly the kind of data that Pass 2 (DOM extraction) would recover using heuristic selectors. The eval test skips the price assertion for this page. Valid-but-sparse beats over-engineering a DOM scraper for one edge case.
+**Cause:** The price exists only in a DOM `<span class="regularPrice">` — no JSON-LD, no meta tags, no structured data at all. Pass 1 has no way to see it; Pass 2 catches it via the price-class heuristic.
 
-### A Day's March: ValidationError on compare_at_price
+**Status:** Resolved in Pass 2. The eval test was updated to assert the DOM-extracted price after this was addressed.
+
+---
+
+### A Day's March: `ValidationError` on `compare_at_price`
 
 **Symptom:** Pydantic `ValidationError` — `compare_at_price` received a string instead of a float.
 
-**Cause:** The LLM returned `"170\xa0USD"` (a price with a non-breaking space and currency code) instead of a bare numeric value.
+**Cause:** The LLM returned `"170\xa0USD"` (price with a non-breaking space and currency code) instead of a bare numeric value.
 
-**Fix:** Added a `_coerce_price_string` field validator on `Price` that extracts the first numeric token from any string value. This handles currency symbols, codes, non-breaking spaces, and other formatting the LLM might include. Defensive parsing at the model boundary rather than hoping the LLM always formats perfectly.
+**Fix:** Added a `_coerce_price_string` field validator on `Price` that extracts the first numeric token from any string value. This handles currency symbols, codes, non-breaking spaces, and other formatting the LLM might include. Defensive parsing at the model boundary — don't rely on the LLM always formatting correctly.
 
-### Ace Hardware: APIConnectionError in eval tests
-
-**Symptom:** `RuntimeError: Event loop is closed` during httpx cleanup, surfaced as `APIConnectionError`.
-
-**Cause:** An `@lru_cache` decorator on the `AsyncOpenAI` client constructor. The cached client was bound to the first `asyncio.run()` event loop. When pytest ran subsequent test cases (each calling `asyncio.run()`), the cached client still held connections from the now-closed loop.
-
-**Fix:** Removed the `@lru_cache`. The client is cheap to create — a fresh instance per call is correctly scoped to the active event loop. The "optimization" of caching was actually a correctness bug.
+---
 
 ### L.L.Bean: brand extracted as empty string
 
 **Symptom:** `brand = ""` on the L.L.Bean product.
 
-**Cause:** `brand_candidates` was empty because L.L.Bean doesn't embed brand in structured data for their own private-label products. `page_url` was `None` (L.L.Bean HTML has no canonical URL), so the LLM had zero signals to work with.
+**Cause:** `brand_candidates` was empty — L.L.Bean doesn't embed brand in structured data for their own private-label products. `page_url` was `None` (the HTML has no canonical URL), so the LLM had no signals to infer from.
 
 **Fix:** Updated the system prompt to instruct the LLM to infer brand from description, title, or domain when `brand_candidates` is empty. For a retailer's own products, the retailer name is the brand.
 
+---
+
 ### Allbirds: variants not extracted
 
-**Symptom:** `variants = []` on the Allbirds product despite the page having 14 size options in a Shopify `var meta = {...}` blob.
+**Symptom:** `variants = []` despite the page having 14 size options in a Shopify `var meta = {...}` blob.
 
-**Cause:** Two gaps in Pass 1. (1) `iter_assigned_json_blobs` only matched `window.__FOO__ = {...}` patterns, not `var name = {...}` or `let`/`const` assignments used by Shopify and others. (2) `collect_candidates_from_node` only stored primitive values in `raw_attributes`; list/dict values like `variants` were silently dropped by `_should_skip_raw_attribute`.
+**Cause:** Two gaps. (1) `iter_assigned_json_blobs` only matched `window.__FOO__ = {...}` patterns, not `var`/`let`/`const` assignments used by Shopify. (2) `collect_candidates_from_node` silently dropped list/dict values from `raw_attributes` — so even when the blob was found, the `variants` array was lost.
 
-**Fix:** Extended script blob extraction to also match `var`/`let`/`const` assignments. Added `structured_passthrough_keys` (variants, options, option_groups) to `MappingRules` — when these keys have list/dict values, they are JSON-serialized into `raw_attributes` so the LLM can build Variant objects. Regex + balanced-bracket extraction was chosen over a full JS parser; BeautifulSoup is irrelevant here since the problem is parsing *within* JavaScript, not HTML.
+**Fix:** Extended script blob extraction to also match `var`/`let`/`const` assignments. Added `structured_passthrough_keys` (`variants`, `options`, `option_groups`) to `MappingRules` — when these keys have list/dict values, they are JSON-serialized into `raw_attributes` so the LLM can build Variant objects from them.
 
-### A Day's March trousers: colors empty despite hex codes in color_candidates
+---
 
-**Symptom:** `colors = []` on the trousers product even though `color_candidates` contained hex codes (e.g. `#888888`) from `swatchColors` in `data-product-object`.
+### A Day's March trousers: colors empty despite hex codes in candidates
 
-**Cause:** The assembler prompt said "use color_candidates" but was too vague. The LLM sometimes ignored them or returned empty.
+**Symptom:** `colors = []` even though `color_candidates` contained hex codes from `swatchColors` in `data-product-object`.
 
-**Fix:** Tightened the colors rule in the system prompt: list all options from `color_candidates`, include hex codes and colorway names, empty only when candidates are empty.
+**Cause:** The assembler prompt said "use color_candidates" but was too vague. The LLM sometimes ignored them.
 
-### Variants are a partial snapshot, not the full product matrix
+**Fix:** Tightened the colors rule in the system prompt: list all option values from the Color `OptionGroup`, include hex codes and colorway names; empty only when candidates are truly absent.
 
-`product.colors` comes from swatch/colorway data on the page — it represents all colors the product line comes in. `product.variants` comes from the active variant blob on that same page — it only contains size/availability data for the one color that was loaded. We have no data on which sizes Auburn comes in, or which images belong to which color.
+---
+
+### Allbirds: `colors` contained product titles instead of colorway names
+
+**Symptom:** `colors` contained `"Men's Dasher NZ - Blizzard/Deep Navy (Blizzard Sole)"` instead of `"Blizzard/Deep Navy"`, `"Auburn"`, etc.
+
+**Cause:** Product-title-like strings from `og:title` and variant names were leaking into `color_candidates`. The LLM followed the prompt but the input was noisy.
+
+**Fix:** Filter `color_candidates` before assembly: drop entries starting with `Men's `, `Women's `, `Kids' `, `Unisex ` — these are product title prefixes, not color names.
+
+---
+
+### Variants are a partial snapshot, not a full product matrix
+
+`product.colors` comes from swatch/colorway data on the page — it represents all colors the product line comes in. `product.variants` comes from the active variant blob on that specific URL — it only contains size/availability data for the one color that was loaded.
 
 The correct model would be `colorways: [{color, image_urls, sizes}]`, but building that requires fetching each color's page separately — 22 API calls for Allbirds alone. Deferred.
 
-**UI consequence:** The "Available options" section only shows non-color attributes (size, etc.) and omits color entirely, since the sizes shown only apply to the scraped color. Displaying them as product-level options would imply all colors come in all sizes, which we can't verify.
-
-### Allbirds: colors were product titles instead of colorway names
-
-**Symptom:** `colors` contained entries like `"Men's Dasher NZ - Blizzard/Deep Navy (Blizzard Sole)"` instead of `"Blizzard/Deep Navy (Blizzard Sole)"`, `"Auburn"`, etc.
-
-**Cause:** Product-title-like strings (from og:title, variant names, etc.) were ending up in `color_candidates`. The LLM followed the prompt but the candidates were noisy.
-
-**Fix:** Filter `color_candidates` before assembly: drop entries that start with `Men's `, `Women's `, `Kids' `, `Unisex ` — these are product title prefixes, not color names.
+**UI consequence:** The product detail page only shows non-color attributes (size, etc.) and omits color from the options panel, since the sizes shown only apply to the scraped color. Displaying them as product-level options would imply all colors come in all sizes, which can't be verified from a single page.
 
 ---
 
 ## Scope Decisions
 
-### What was deferred (not cut)
-
-These are features explicitly planned for later phases. They have clear designs but weren't needed for the core pipeline.
-
-| Feature | Phase | Rationale |
-|---------|-------|-----------|
-| Pass 2: DOM extraction | MVP2 | Image priority ladder and option group parsing improve quality but aren't needed for the happy path. Pass 1 covers the structured data that most sites provide. |
-| Rich variant selectors | MVP2 | Requires option group data from Pass 2. Without it, variants come from whatever the LLM can infer from raw attributes. |
-| `POST /extract` endpoint | MVP3 | The seed script handles extraction. A live endpoint adds API contract complexity for no evaluation benefit. |
-| Skeleton loading states | MVP3 | Polish. The server components render with data already fetched — loading states only matter for client-side transitions. |
-| `AttributesTable` component | MVP3 | Displays `raw_attributes` on the PDP. Nice-to-have but not part of the core product display. |
-
-### What was cut
-
-These were considered and deliberately excluded.
+### What was deferred (planned for later phases)
 
 | Feature | Rationale |
 |---------|-----------|
-| Semantic embedding retrieval | BM25 covers the taxonomy pre-filter use case. Embeddings add latency, a model dependency, and complexity for marginal recall improvement when the LLM makes the final call anyway. |
-| Per-variant image/price linking | Requires mining per-variant data from script blobs. Diminishing return — most sites don't expose this in structured data. |
-| Full microdata graph traversal | Partial support added (elements with `itemprop` + `content`). Full graph traversal is a significant parser for limited additional signal. |
-| Evidence/provenance tracking | Tracking which source each candidate came from would help debugging but has no user-facing payoff at this scope. |
-| Debug drawer in UI | Not asked for. Would only serve the developer, not the evaluator. |
+| Pass 2: full image priority ladder | Pass 1 image coverage is sufficient for the corpus. A heuristic `data-zoom → srcset → data-src → src` ladder improves quality but isn't needed for the happy path. |
+| Rich variant selectors in UI | Requires option group data from Pass 2 DOM parsing. Without full option groups, variants come from whatever the LLM infers. |
+| `POST /extract` endpoint | Seed script handles extraction. A live endpoint adds API contract complexity with no evaluation benefit. |
+| Skeleton loading states | Polish. Server components render with data already fetched — loading states only matter for client-side transitions. |
+| `AttributesTable` component | Displays `raw_attributes` on the PDP. Developer-facing debug tool, not part of the core product display. |
+| Field-level provenance | Tracking `(value, source, confidence)` per extracted field helps debugging but has no user-facing payoff at this scope. |
+
+### What was cut
+
+| Feature | Rationale |
+|---------|-----------|
+| Semantic embedding retrieval | BM25 covers the taxonomy pre-filter use case. Embeddings add latency, a model dependency, and complexity for marginal recall improvement when the LLM makes the final call. |
+| Per-variant image/price linking | Requires fetching each color's page separately. Most sites don't expose per-variant structured data. |
+| Full microdata graph traversal | Partial support added (`itemprop`+`content` elements). Full traversal is significant parser work for limited additional signal. |
+| Debug drawer in UI | Not asked for. Would serve only the developer, not the evaluator. |
 
 ---
 
@@ -114,8 +126,8 @@ These were considered and deliberately excluded.
 
 ### Vertical-slice delivery
 
-Built and validated one complete end-to-end slice (HTML in → Product JSON → API → UI) before adding depth. This means the pipeline was always in a working state, and scope cuts were informed by actual output quality rather than speculation.
+Built and validated one complete end-to-end slice (HTML in → Product JSON → API → UI) before adding depth. This kept the pipeline in a working state at all times and meant scope cuts were informed by actual output quality rather than speculation.
 
-### Why separate design.md and process.md
+### Why separate design.md and decisions.md
 
-[design.md](design.md) captures the *what and why* of the architecture. [process.md](process.md) captures the *how and when* of execution — time budgets, done gates, risks. Keeping them separate means the design doc stays useful as a reference after the project is done, while the process doc is a snapshot of the build approach.
+[design.md](design.md) is a discussion guide — crisp answers to architectural questions, keyed decision rationale, and scaling thinking. [decisions.md](decisions.md) (this file) is a development log — concrete bugs encountered, their root causes, and the targeted fixes. They serve different audiences at different moments.
