@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Run all tests (including slow)
+      - name: Run tests
         env:
           OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
-        run: uv run pytest -o addopts="-v -s" --tb=short
+        run: make test-all
