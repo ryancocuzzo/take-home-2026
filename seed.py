@@ -14,6 +14,7 @@ from pathlib import Path
 from backend.assemble import assemble_product
 from backend.corpus import DATA_DIR, PAGES, PRODUCTS_DIR
 from backend.extract import extract_dom_signals, extract_structured_signals
+from backend.identity import IdentityResolver, IdentityResolverConfig
 from backend.taxonomy import select_category_candidates
 from models import Product
 
@@ -56,11 +57,16 @@ async def seed_all() -> dict[str, Product]:
             logger.error("Failed to seed %s: %s", filename, result)
             continue
         pid, product = result
-        _write_product(pid, product)
         seeded[pid] = product
 
-    logger.info("Seeded %d/%d products.", len(seeded), len(PAGES))
-    return seeded
+    resolver = IdentityResolver(IdentityResolverConfig.from_env())
+    seeded_with_identity = resolver.assign_canonical_products(seeded)
+
+    for pid, product in seeded_with_identity.items():
+        _write_product(pid, product)
+
+    logger.info("Seeded %d/%d products.", len(seeded_with_identity), len(PAGES))
+    return seeded_with_identity
 
 
 if __name__ == "__main__":

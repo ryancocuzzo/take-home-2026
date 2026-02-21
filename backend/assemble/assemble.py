@@ -12,13 +12,12 @@ error is appended to the prompt and the call is retried once. Any failure after
 the retry propagates to the caller.
 """
 
-import json
 import logging
 
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 import ai
-from models import ExtractionContext, Product
+from models import ExtractionContext, Offer, Price, Product, Variant
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +44,9 @@ Rules:
   or the description. Empty list is acceptable if none are present.
 - colors: derive from option_group_candidates where dimension is "Color". List all
   option values from that group. Empty list if no Color group is present.
-- category: you MUST choose the exact string of one item from the numbered
-  category list provided. Copy it character-for-character. Do not paraphrase.
+- category_choice: choose exactly one category by 1-based index from the
+  numbered list (1 = first item, 2 = second item, etc.). Do not output a
+  free-form category string.
 - variants: use option_group_candidates to build Variant objects. Generate ONLY
   variants that are meaningfully distinct — where availability or price differs
   across known combinations, or where the combination has a recognised proper name.
@@ -54,6 +54,39 @@ Rules:
   Each variant needs a human-readable name (e.g. "Red / M") and an attributes
   dict (e.g. {"color": "Red", "size": "M"}). If no option groups exist, return [].
 """
+
+
+class _AssembledProductDraft(BaseModel):
+    name: str
+    price: Price
+    description: str
+    key_features: list[str]
+    image_urls: list[str]
+    video_url: str | None = None
+    category_choice: int = Field(ge=1)
+    brand: str
+    colors: list[str]
+    variants: list[Variant] = Field(default_factory=list)
+    offers: list[Offer] = Field(default_factory=list)
+
+
+def _materialize_product(
+    draft: _AssembledProductDraft, category_candidates: list[str]
+) -> Product:
+    if not category_candidates:
+        raise ValueError("category_candidates must not be empty")
+
+    idx = draft.category_choice - 1
+    if idx < 0 or idx >= len(category_candidates):
+        raise ValueError(
+            f"Invalid category_choice={draft.category_choice}; "
+            f"expected 1..{len(category_candidates)}"
+        )
+
+    payload = draft.model_dump()
+    payload["category"] = {"name": category_candidates[idx]}
+    payload.pop("category_choice", None)
+    return Product.model_validate(payload)
 
 
 def build_prompt(
@@ -73,7 +106,7 @@ def build_prompt(
     )
 
     user_content = f"""\
-## Category candidates (choose exactly one, copy the string verbatim)
+## Category candidates (choose exactly one by 1-based index)
 
 {numbered}
 
@@ -108,10 +141,14 @@ async def assemble_product(
     messages = build_prompt(context, category_candidates)
 
     try:
-        return await ai.responses(_MODEL, messages, text_format=Product)
+        draft = await ai.responses(_MODEL, messages, text_format=_AssembledProductDraft)
+        return _materialize_product(draft, category_candidates)
     except ValidationError as exc:
         logger.warning("Assembler: ValidationError on first attempt, retrying. Error: %s", exc)
         retry_messages = build_prompt(
             context, category_candidates, validation_error=str(exc)
         )
-        return await ai.responses(_MODEL, retry_messages, text_format=Product)
+        draft = await ai.responses(
+            _MODEL, retry_messages, text_format=_AssembledProductDraft
+        )
+        return _materialize_product(draft, category_candidates)

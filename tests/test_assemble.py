@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 
-from backend.assemble.assemble import assemble_product, build_prompt
+from backend.assemble.assemble import _AssembledProductDraft, assemble_product, build_prompt
 from models import Category, ExtractionContext, Merchant, Offer, Price, Product, Variant
 
 
@@ -56,6 +56,26 @@ def _make_valid_product() -> Product:
     )
 
 
+def _make_valid_draft(category_choice: int = 1) -> _AssembledProductDraft:
+    return _AssembledProductDraft(
+        name="Test Drill",
+        price=Price(price=129.00, currency="USD"),
+        description="A reliable cordless drill.",
+        key_features=["20V battery", "Compact design"],
+        image_urls=["https://example.com/drill.jpg"],
+        category_choice=category_choice,
+        brand="DeWalt",
+        colors=[],
+        variants=[],
+        offers=[
+            Offer(
+                merchant=Merchant(name="DeWalt"),
+                price=Price(price=129.00, currency="USD"),
+            )
+        ],
+    )
+
+
 def _make_validation_error() -> ValidationError:
     """Produce a real ValidationError by attempting to create a Category with an invalid name."""
     try:
@@ -76,7 +96,7 @@ class TestBuildPrompt(unittest.TestCase):
             brands=["DeWalt"],
         )
         self.candidates = [
-            "Hardware > Tools > Power Tools > Drills",
+            "Hardware > Tool Accessories > Drill & Screwdriver Accessories",
             "Sporting Goods > Outdoor Recreation",
         ]
 
@@ -113,7 +133,7 @@ class TestBuildPrompt(unittest.TestCase):
         messages = build_prompt(self.context, self.candidates)
         system_content = messages[0]["content"]
 
-        self.assertIn("character-for-character", system_content)
+        self.assertIn("1-based index", system_content)
 
     def test_no_validation_error_section_by_default(self) -> None:
         messages = build_prompt(self.context, self.candidates)
@@ -139,21 +159,21 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
             prices=["129.00"],
             images=["https://example.com/drill.jpg"],
         )
-        self.candidates = ["Hardware > Tools > Power Tools > Drills"]
+        self.candidates = ["Hardware > Tool Accessories > Drill & Screwdriver Accessories"]
 
     async def test_returns_product_on_first_success(self) -> None:
-        valid_product = _make_valid_product()
+        valid_draft = _make_valid_draft()
 
-        with patch("backend.assemble.assemble.ai.responses", new=AsyncMock(return_value=valid_product)):
+        with patch("backend.assemble.assemble.ai.responses", new=AsyncMock(return_value=valid_draft)):
             result = await assemble_product(self.context, self.candidates)
 
         self.assertEqual(result.name, "Test Drill")
 
     async def test_retries_once_on_validation_error(self) -> None:
-        valid_product = _make_valid_product()
+        valid_draft = _make_valid_draft()
         validation_error = _make_validation_error()
 
-        mock_responses = AsyncMock(side_effect=[validation_error, valid_product])
+        mock_responses = AsyncMock(side_effect=[validation_error, valid_draft])
 
         with patch("backend.assemble.assemble.ai.responses", new=mock_responses):
             result = await assemble_product(self.context, self.candidates)
@@ -162,10 +182,10 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.name, "Test Drill")
 
     async def test_retry_prompt_contains_validation_error_text(self) -> None:
-        valid_product = _make_valid_product()
+        valid_draft = _make_valid_draft()
         validation_error = _make_validation_error()
 
-        mock_responses = AsyncMock(side_effect=[validation_error, valid_product])
+        mock_responses = AsyncMock(side_effect=[validation_error, valid_draft])
 
         with patch("backend.assemble.assemble.ai.responses", new=mock_responses):
             await assemble_product(self.context, self.candidates)
@@ -186,6 +206,13 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
                 await assemble_product(self.context, self.candidates)
 
         self.assertEqual(mock_responses.call_count, 2)
+
+    async def test_raises_when_model_returns_out_of_range_category_choice(self) -> None:
+        bad_draft = _make_valid_draft(category_choice=99)
+
+        with patch("backend.assemble.assemble.ai.responses", new=AsyncMock(return_value=bad_draft)):
+            with self.assertRaises(ValueError):
+                await assemble_product(self.context, self.candidates)
 
 
 class TestProductOfferCompatibility(unittest.TestCase):

@@ -114,7 +114,7 @@ See [docs/decisions.md](docs/decisions.md) for detailed trade-offs and bugs enco
 These were intentional scope boundaries for the take-home. They are the first areas to harden for production-scale systems.
 
 - **Canonical commerce model**: current schema is `Product + Price + Variant`; next step is splitting into `Product` (identity), `Merchant`, and `Offer` (merchant-specific price/availability/shipping/promo) so the same product can have multiple offers without schema churn.
-- **Entity resolution / identity**: no cross-merchant dedupe yet. Add `CanonicalProductId` plus `MatchEvidence` (UPC/GTIN, title+brand similarity, attribute overlap, image hash) with thresholds and confidence scores.
+- **Entity resolution / identity**: dedupe now uses a two-tier strategy — UPC/GTIN exact match first, then title+brand similarity fallback when GTIN is absent. `CanonicalProductId` and explainable `MatchEvidence` are stored per product, with thresholds configurable via env vars.
 - **Query surface**: current API is read-only listing/detail. Add deterministic filters first (`category`, `brand`, `price`, variant attributes), then semantic retrieval as rank-after-filter, not model-only retrieval.
 - **Reliability and reprocessing**: seed script is batch-only. Move to idempotent jobs keyed by content hash, process only changed pages, and support backfills/reindex without downtime.
 - **Explainability**: add field-level provenance (`value`, `source`, `confidence`) to extraction outputs so we can answer "why this value/category/match?" in logs and internal tooling.

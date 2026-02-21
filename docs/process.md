@@ -136,18 +136,25 @@ Split the current product-centric shape into explicit entities:
 
 #### Phase 2 · Entity resolution and identity
 
-Add deterministic + probabilistic matching signals for cross-merchant dedupe:
-- UPC/GTIN exact match (strong)
-- title+brand similarity
-- normalized attribute overlap
-- image hash similarity
+Use a two-tier matching strategy for cross-merchant dedupe (Option 2):
+- Tier 1 (deterministic): UPC/GTIN exact match => auto-match
+- Tier 2 (probabilistic fallback): title+brand similarity threshold when GTIN is absent
 
 Store match evidence and confidence, not just a boolean decision.
 
 **Done gate:**
-- [ ] Canonical product IDs are stable across reruns
-- [ ] Matching decisions include explainable evidence and confidence
-- [ ] Thresholds are configurable without code changes
+- [x] Canonical product IDs are stable across reruns
+- [x] Matching decisions include explainable evidence and confidence
+- [x] Thresholds are configurable without code changes
+
+**Trade-offs (why Option 2 now):**
+- Keeps implementation and debugging cost low while still deduping obvious non-GTIN duplicates
+- Preserves explainability with only two signals, making threshold tuning understandable
+- Reduces false confidence from weak signals at this dataset size
+- Defers `normalized_attribute_overlap` and `image_hash_similarity` to a later phase when corpus size and failure modes justify added complexity
+
+**Dependency decisions:**
+- `networkx` for connected components — grouping matched pairs into clusters (A matches B and B matches C → all three in one group) requires graph traversal. Hand-rolling DFS was ~25 lines of hard-to-follow state management. `networkx.connected_components` does it in two lines and is a well-known standard library for this operation. Alternatives considered: `scipy.sparse.csgraph` (pulls in numpy/scipy for one function), `dedupe` library (requires training data), union-find by hand (less readable than networkx).
 
 ---
 

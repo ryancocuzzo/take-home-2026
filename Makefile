@@ -1,5 +1,8 @@
 .PHONY: backend frontend test test-eval test-all
 
+seed:
+	uv run python seed.py
+
 backend:
 	uv run uvicorn backend.api.api:app --port 8000
 

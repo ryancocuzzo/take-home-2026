@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, Literal
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -78,6 +78,24 @@ class Offer(BaseModel):
     source_url: str | None = None
 
 
+class MatchEvidence(BaseModel):
+    signal: Literal[
+        "upc_gtin_exact_match",
+        "title_brand_similarity",
+    ]
+    score: float = Field(ge=0.0, le=1.0)
+    matched: bool
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class MatchDecision(BaseModel):
+    candidate_product_id: str | None = None
+    matched: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    threshold: float = Field(ge=0.0, le=1.0)
+    evidence: list[MatchEvidence] = Field(default_factory=list)
+
+
 class Product(BaseModel):
     name: str
     price: Price
@@ -90,6 +108,8 @@ class Product(BaseModel):
     colors: list[str]
     variants: list[Variant] = Field(default_factory=list)
     offers: list[Offer] = Field(default_factory=list)
+    canonical_product_id: str | None = None
+    match_decision: MatchDecision | None = None
 
     @model_validator(mode="after")
     def _ensure_offer_exists(self) -> "Product":
