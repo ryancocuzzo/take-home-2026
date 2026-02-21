@@ -1,7 +1,7 @@
 import re
 from typing import Any
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Load categories once at module level
 CATEGORIES_FILE = Path(__file__).parent / "categories.txt"
@@ -64,6 +64,20 @@ class Variant(BaseModel):
     availability: str | None = None
 
 
+class Merchant(BaseModel):
+    name: str
+    merchant_id: str | None = None
+
+
+class Offer(BaseModel):
+    merchant: Merchant
+    price: Price
+    availability: str | None = None
+    shipping: str | None = None
+    promo: str | None = None
+    source_url: str | None = None
+
+
 class Product(BaseModel):
     name: str
     price: Price
@@ -75,6 +89,24 @@ class Product(BaseModel):
     brand: str
     colors: list[str]
     variants: list[Variant] = Field(default_factory=list)
+    offers: list[Offer] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _ensure_offer_exists(self) -> "Product":
+        """
+        Backward-compatible bridge: if upstream extraction populates legacy
+        product-level brand/price fields but omits offers, synthesize a primary
+        offer so API consumers can rely on merchant-scoped offer data.
+        """
+        if self.offers:
+            return self
+        self.offers = [
+            Offer(
+                merchant=Merchant(name=self.brand),
+                price=self.price,
+            )
+        ]
+        return self
 
 
 class ProductSummary(BaseModel):

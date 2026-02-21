@@ -1,6 +1,6 @@
 # Product Data Extraction Pipeline
 
-Extracts structured product data from arbitrary HTML product pages — no site-specific logic — using a multi-pass pipeline that separates deterministic parsing from LLM reasoning.
+Extracts structured product data from arbitrary HTML product pages (7-page corpus in this repo) with no site-specific logic, using a multi-pass pipeline that separates deterministic parsing from LLM reasoning.
 
 ## Quick Start
 
@@ -60,7 +60,7 @@ See [docs/architecture.md](docs/architecture.md) for component-level detail.
 
 ### Backend at scale
 
-The current pipeline processes 5 pages concurrently with `asyncio.gather` and writes flat JSON files. The extraction architecture — deterministic Pass 1 feeding into a single cheap LLM call — scales linearly in cost: at ~$0.005 per product on `gemini-2.0-flash-lite`, 50M products costs roughly $250K in inference, which is viable for a batch job. The BM25 index is built once and cached; it adds negligible overhead regardless of corpus size.
+The current pipeline processes 7 sample pages concurrently with `asyncio.gather` and writes flat JSON files. The extraction architecture — deterministic Pass 1 feeding into a single cheap LLM call — scales linearly in cost: at ~$0.005 per product on `gemini-2.0-flash-lite`, 50M products costs roughly $250K in inference, which is viable for a batch job. The BM25 index is built once and cached; it adds negligible overhead regardless of corpus size.
 
 What breaks is the infrastructure around it. Flat JSON files become untenable past ~10K products — you need a database (Postgres with JSONB, or a document store) for indexed queries, concurrent writes, and catalog-level operations like filtering and search. The single-process `asyncio.gather` approach needs to become a distributed task queue (Celery/RQ, or a managed service like Cloud Tasks) with rate limiting against upstream sites and the LLM provider. HTML fetching — which is out of scope here since we work from pre-fetched files — becomes the real bottleneck at scale: you need a crawler with politeness controls, retry logic, and deduplication to avoid re-processing pages that haven't changed. The taxonomy pre-filter is keyword-based and won't need to change, but the LLM prompt may need per-vertical tuning as product diversity increases — a shoe prompt and an electronics prompt have different failure modes.
 
@@ -72,7 +72,7 @@ For developers building new shopping experiences, I'd provide: (1) a webhook/str
 
 ## CI
 
-GitHub Actions runs all tests (including slow LLM evals) on every push and PR.
+GitHub Actions is configured to run the full test suite (`make test-all`) on every push and PR. Slow eval tests require `OPEN_ROUTER_API_KEY` to be configured in repository secrets.
 
 ## Key Decisions
 
@@ -83,7 +83,7 @@ GitHub Actions runs all tests (including slow LLM evals) on every push and PR.
 | **Single retry on validation error** | One retry covers the common case (category string mismatch). A loop would mask systematic prompt problems that need fixing, not more attempts. |
 | **gemini-2.0-flash-lite** | ~$0.005/call. Quality is sufficient for structured assembly. Escalation path is flash-full, not a pipeline rewrite. |
 | **No site-specific logic** | Zero conditionals on domain, XPath selectors, or page-specific prompt hints. The pipeline must generalize to unseen sites. |
-| **Flat JSON files for storage** | Correct at this scale (5 products). The trade-off inverts at ~10K products — acknowledged, not over-engineered. |
+| **Flat JSON files for storage** | Correct at this scale (7 products). The trade-off inverts at ~10K products — acknowledged, not over-engineered. |
 
 See [docs/decisions.md](docs/decisions.md) for detailed trade-offs and bugs encountered during development.
 
@@ -108,3 +108,13 @@ See [docs/decisions.md](docs/decisions.md) for detailed trade-offs and bugs enco
 ├── tests/                       # Unit tests + eval suite
 └── docs/                        # Architecture deep dive + decision log
 ```
+
+## Current Limits and Next Platform Steps
+
+These were intentional scope boundaries for the take-home. They are the first areas to harden for production-scale systems.
+
+- **Canonical commerce model**: current schema is `Product + Price + Variant`; next step is splitting into `Product` (identity), `Merchant`, and `Offer` (merchant-specific price/availability/shipping/promo) so the same product can have multiple offers without schema churn.
+- **Entity resolution / identity**: no cross-merchant dedupe yet. Add `CanonicalProductId` plus `MatchEvidence` (UPC/GTIN, title+brand similarity, attribute overlap, image hash) with thresholds and confidence scores.
+- **Query surface**: current API is read-only listing/detail. Add deterministic filters first (`category`, `brand`, `price`, variant attributes), then semantic retrieval as rank-after-filter, not model-only retrieval.
+- **Reliability and reprocessing**: seed script is batch-only. Move to idempotent jobs keyed by content hash, process only changed pages, and support backfills/reindex without downtime.
+- **Explainability**: add field-level provenance (`value`, `source`, `confidence`) to extraction outputs so we can answer "why this value/category/match?" in logs and internal tooling.

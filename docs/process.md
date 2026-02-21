@@ -2,6 +2,8 @@
 
 Vertical-slice delivery: build and validate one complete end-to-end slice before adding depth.
 
+Note: MVP1 was originally scoped against 5 pages from the prompt. The repository corpus now contains 7 pages, and later phases/sanity checks reflect the 7-page corpus.
+
 ---
 
 ## MVP1 — End-to-end happy path
@@ -88,7 +90,7 @@ Setup instructions (backend + frontend). 1–2 paragraph system design write-up 
 - [x] API returns data in the format the frontend expects
 - [x] No hardcoded file paths or API keys in committed code
 - [x] `.env.example` exists if env vars are required
-- [x] Only the 5 provided HTML files are used as test data — no invented fixtures
+- [x] Only the provided HTML files in the corpus are used as test data — no invented fixtures
 
 ---
 
@@ -114,103 +116,87 @@ Setup instructions (backend + frontend). 1–2 paragraph system design write-up 
 
 ---
 
-## MVP2 — Extraction fidelity and model expressiveness
+## MVP2 — Platform model hardening
 
-Builds on MVP1 with better signal quality and a richer data model. No new surface area — every change is in the extraction and assembly pipeline.
-
-Two root problems to fix: the LLM is over-working (it resolves conflicts, normalizes, and structures variants all from a flat candidate bag with no source context), and the data model is under-expressive (`raw_attributes: dict[str, Any]` throws away structure the HTML already encodes).
+Builds on MVP1 by closing the biggest architecture gaps: canonical model boundaries and identity.
 
 ### Execution checklist
 
-#### Phase 1 · DOM extraction pass
+#### Phase 1 · Canonical commerce model
 
-Add `extract_dom_signals(html, page_url)` as a deterministic Pass 2 that enriches `ExtractionContext` before the assembler runs. No LLM.
-
-- Price fallback: `[itemprop="price"]`, `[class*="price"]` elements, `data-price` attributes — fixes Article's `price = 0.0`
-- Option groups: `aria-label` patterns on buttons (`"Size Option: Large"`, `"Select size 8"`) → `OptionGroup` candidates
-- Availability: `[itemprop="availability"]` content attribute → `raw_attributes["dom_availability"]`
-
-**Architectural decision — `color_candidates` removed:** `color_candidates` (flat string list) was a weaker representation of the same concept as `OptionGroup(dimension="Color")`. Both were feeding `Product.colors` via different paths. We consolidated: color signals from JSON-LD, script blobs, and `data-color-swatch` attributes now produce a Color `OptionGroup` instead of a flat list. `option_group_candidates` is the single source of truth for all variation dimensions. The assembler prompt was updated accordingly — colors are derived from the Color OptionGroup, and variants are generated only for meaningfully distinct combinations (no cartesian-product instruction).
+Split the current product-centric shape into explicit entities:
+- `Product` (canonical identity + attributes)
+- `Merchant` (seller identity)
+- `Offer` (merchant-scoped price, availability, shipping, promo)
 
 **Done gate:**
-- [x] Article page produces a non-zero price sourced from DOM
-- [x] Allbirds and LLBean each produce ≥ 1 `OptionGroup` candidate from DOM (the only pages with static product option HTML)
-- [x] `color_candidates` removed — `ExtractionContext` has one concept for variation dimensions
-- [x] Assembler prompt uses `option_group_candidates`; no cartesian-product instruction
-- [x] All existing Pass 1 tests still pass
+- [x] One canonical `Product` can hold multiple `Offer`s from different merchants
+- [x] API responses keep product-level attributes separate from offer-level attributes
+- [x] Existing frontend still renders without schema ambiguity
 
-**Watch for:**
-- JS-rendered pages won't have much in the DOM either. Don't force it — a missing option group is fine; a wrong one isn't.
+#### Phase 2 · Entity resolution and identity
 
-#### Phase 2 · `OptionGroup` model and structured variant assembly
+Add deterministic + probabilistic matching signals for cross-merchant dedupe:
+- UPC/GTIN exact match (strong)
+- title+brand similarity
+- normalized attribute overlap
+- image hash similarity
 
-Replace `raw_attributes: dict[str, Any]` with `option_groups: list[OptionGroup]` on `ExtractionContext`. New models:
-
-```python
-class OptionValue(BaseModel):
-    value: str
-    available: bool = True
-    price_delta: float | None = None
-
-class OptionGroup(BaseModel):
-    dimension: str  # "Size", "Color", "Material", etc.
-    options: list[OptionValue]
-```
-
-Assembler receives typed `OptionGroup` input, generates cartesian-product `Variant` list with named attributes and per-variant price/availability. Keep `raw_attributes` as a debug overflow field only. Cap variants at 50; log when the cap applies.
+Store match evidence and confidence, not just a boolean decision.
 
 **Done gate:**
-- [ ] LLBean, Nike, A Day's March produce a `Variant` list with named attributes matching their option groups
-- [ ] `Variant.availability` is populated where option-level availability is known
-- [ ] Assembler prompt uses `option_groups`, not the raw blob
-
-#### Phase 3 · Signal provenance
-
-Candidates carry their extraction source so the assembler can apply a confidence hierarchy and so we can see where each value came from.
-
-```python
-class CandidateSignal(BaseModel):
-    value: str
-    source: Literal["json_ld", "meta_tag", "script_blob", "dom"]
-```
-
-Candidate fields on `ExtractionContext` change from `list[str]` to `list[CandidateSignal]`. Assembler prompt renders source labels alongside values (`"json_ld: $129.00"`, `"dom: $99.00"`). Hierarchy: `json_ld > script_blob > dom > meta_tag`. `Product` model is unchanged.
-
-**Done gate:**
-- [ ] Every candidate has a non-null `source`
-- [ ] Assembler prompt renders source labels
-- [ ] Conflicting `json_ld` and `dom` prices resolve to `json_ld` (verified by a test with a seeded conflict)
-- [ ] All existing extraction tests pass after field type change
-
-#### Phase 4 · Image pipeline upgrade
-
-Priority ladder: JSON-LD → `og:image` → script blob → DOM `srcset`/`data-zoom-src` → DOM `<img src>`. Resolution ranking: extract width hints from URL patterns (`_800x`, `?w=800`, `srcset`); prefer higher resolution. Canonical deduplication: deduplicate by canonical URL after stripping resize params, not raw string equality.
-
-**Done gate:**
-- [ ] No product has duplicate images
-- [ ] `og:image` ranks above a DOM-scraped image of the same product
-- [ ] Resolution hint is populated for at least one page that embeds width in URLs
-- [ ] All 7 pages still have at least one image
+- [ ] Canonical product IDs are stable across reruns
+- [ ] Matching decisions include explainable evidence and confidence
+- [ ] Thresholds are configurable without code changes
 
 ---
 
 ### Sanity checks (run before calling MVP2 done)
 
-- [ ] All 7 pages produce a valid `Product` with no `ValidationError`
-- [ ] Article price > 0.0
-- [ ] LLM cost per product still under 1¢
-- [ ] All existing tests still pass
+- [ ] Canonical/merchant/offer boundaries are reflected in API contracts
+- [ ] Re-seeding the same inputs does not create duplicate canonical products
+- [ ] At least one test covers a high-confidence match and one covers a low-confidence non-match
 
 ---
 
-## MVP3 — Polish and completeness
+## MVP3 — Query, reliability, and eval gates
 
-- **Taxonomy fallback** — when BM25 returns no overlap, fall back to the highest-scoring broad top-level segment instead of giving the LLM an empty list
-- **Sparse page warnings** — log a structured warning when fewer than 2 sources contribute to a field; assembler prompt flags low-confidence fields explicitly
-- **`POST /extract`** — accepts `{ "url": "..." }` or `{ "html": "...", "url": "..." }`, runs the full pipeline, returns `Product`
-- **Catalog filtering** — `GET /products?category=...&brand=...&price_max=...`
-- **`VariantsPanel`** — dimension pill selectors; selecting a combination shows the active variant's price/availability
-- **`AttributesTable`** — collapsible debug section on PDP for `raw_attributes`
-- **Skeleton loading states and error boundaries**
-- **Empty states** for missing description, images, variants, features
-- **Responsive layout** — catalog collapses to single column; PDP image gallery stacks on mobile
+Adds production-facing behavior: query surfaces, reprocessing safety, and regression control.
+
+### Execution checklist
+
+#### Phase 1 · Deterministic query surface + semantic rerank
+
+Add structured filtering first (`category`, `brand`, `price`, variant attrs), then semantic reranking on the filtered set.
+
+**Done gate:**
+- [ ] Query path is explicitly filter-then-rank (no model-only retrieval)
+- [ ] Pagination and timeout defaults are in place
+- [ ] New query types can be added without changing core extraction flow
+
+#### Phase 2 · Reliability and reprocessing
+
+Move from one-shot batch behavior to safe incremental processing:
+- idempotency key per input (content hash)
+- process only on change
+- safe backfill/reindex plan
+
+**Done gate:**
+- [ ] Reprocessing unchanged inputs is a no-op
+- [ ] Failed extractions can be retried without corrupting state
+- [ ] Reindex/backfill can run without taking reads offline
+
+#### Phase 3 · Quality gates (eval + drift)
+
+Add a small golden set with per-field scoring and diff-based regression checks.
+
+**Done gate:**
+- [ ] Golden outputs exist for representative retailers
+- [ ] CI fails on meaningful score regressions
+- [ ] Adding a new retailer does not silently degrade existing ones
+
+---
+
+### Deferred improvements from earlier MVP2/MVP3 drafts
+
+The previous extraction-fidelity and UI-polish items (e.g., additional DOM/image upgrades, `POST /extract`, variants panel, skeletons, empty states) remain valid improvement points. They are intentionally deferred in favor of platform-hardening work above.

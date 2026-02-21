@@ -45,7 +45,7 @@ This pass is cheap and deterministic but produces *candidates*, not a product. I
 
 The intermediate candidate bag passed between passes and into the assembler. It holds lists — title might have three candidates, images might have fifteen. Nothing is resolved yet.
 
-This design decouples extraction passes from assembly. Either can change independently. The context is intentionally loosely typed: `dict` for raw attributes, plain strings for price candidates. Strict typing here would require resolving structure before the LLM has had a chance to, which inverts the dependency.
+This design decouples extraction passes from assembly. Either can change independently. The context keeps candidate fields loosely typed (`list[str]` for unresolved text candidates) while preserving structured variation dimensions via `OptionGroup`.
 
 ```python
 class ExtractionContext(BaseModel):
@@ -57,7 +57,7 @@ class ExtractionContext(BaseModel):
     image_url_candidates: list[str]
     category_hint_candidates: list[str]
     key_feature_candidates: list[str]
-    color_candidates: list[str]
+    option_group_candidates: list[OptionGroup]
     raw_attributes: dict[str, Any]
 ```
 
@@ -140,7 +140,7 @@ On `ValidationError`, retry once with the error message appended to the prompt. 
 
 Flat JSON files at `data/products/{id}.json` where `id = sha256(url)[:12]`. No database. The seed script writes them; the API reads them.
 
-This is correct for the current scope (5 products). A database would add setup complexity, migrations, and a dependency for no benefit at this scale. The trade-off inverts at ~10K products where scan time and concurrent write safety matter.
+This is correct for the current scope (7 products). A database would add setup complexity, migrations, and a dependency for no benefit at this scale. The trade-off inverts at ~10K products where scan time and concurrent write safety matter.
 
 ---
 

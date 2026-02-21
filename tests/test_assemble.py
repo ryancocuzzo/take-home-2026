@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 from pydantic import ValidationError
 
 from backend.assemble.assemble import assemble_product, build_prompt
-from models import Category, ExtractionContext, Price, Product, Variant
+from models import Category, ExtractionContext, Merchant, Offer, Price, Product, Variant
 
 
 def _make_context(
@@ -47,6 +47,12 @@ def _make_valid_product() -> Product:
         brand="DeWalt",
         colors=[],
         variants=[],
+        offers=[
+            Offer(
+                merchant=Merchant(name="DeWalt"),
+                price=Price(price=129.00, currency="USD"),
+            )
+        ],
     )
 
 
@@ -180,3 +186,22 @@ class TestAssembleProductRetry(unittest.IsolatedAsyncioTestCase):
                 await assemble_product(self.context, self.candidates)
 
         self.assertEqual(mock_responses.call_count, 2)
+
+
+class TestProductOfferCompatibility(unittest.TestCase):
+    def test_product_without_offers_synthesizes_primary_offer(self) -> None:
+        product = Product(
+            name="Legacy Drill",
+            price=Price(price=99.0, currency="USD"),
+            description="Legacy payload without offers.",
+            key_features=[],
+            image_urls=["https://example.com/legacy-drill.jpg"],
+            category=Category(name="Hardware > Tool Accessories > Drill & Screwdriver Accessories"),
+            brand="LegacyCo",
+            colors=[],
+            variants=[],
+        )
+
+        self.assertEqual(len(product.offers), 1)
+        self.assertEqual(product.offers[0].merchant.name, "LegacyCo")
+        self.assertEqual(product.offers[0].price.price, 99.0)

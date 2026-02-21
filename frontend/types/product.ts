@@ -15,6 +15,20 @@ export interface Variant {
   availability: string | null;
 }
 
+export interface Merchant {
+  name: string;
+  merchant_id: string | null;
+}
+
+export interface Offer {
+  merchant: Merchant;
+  price: Price;
+  availability: string | null;
+  shipping: string | null;
+  promo: string | null;
+  source_url: string | null;
+}
+
 export interface ProductSummary {
   id: string;
   name: string;
@@ -35,4 +49,5 @@ export interface Product {
   brand: string;
   colors: string[];
   variants: Variant[];
+  offers: Offer[];
 }
