@@ -160,9 +160,9 @@ Store match evidence and confidence, not just a boolean decision.
 
 ### Sanity checks (run before calling MVP2 done)
 
-- [ ] Canonical/merchant/offer boundaries are reflected in API contracts
-- [ ] Re-seeding the same inputs does not create duplicate canonical products
-- [ ] At least one test covers a high-confidence match and one covers a low-confidence non-match
+- [x] Canonical/merchant/offer boundaries are reflected in API contracts
+- [x] Re-seeding the same inputs does not create duplicate canonical products
+- [x] At least one test covers a high-confidence match and one covers a low-confidence non-match
 
 ---
 
