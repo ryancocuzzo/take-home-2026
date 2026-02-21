@@ -114,24 +114,100 @@ Setup instructions (backend + frontend). 1–2 paragraph system design write-up 
 
 ---
 
-## MVP2 — Extraction depth (deferred)
+## MVP2 — Extraction fidelity and model expressiveness
 
-Builds on MVP1 with richer extraction quality, not new surface area.
+Builds on MVP1 with better signal quality and a richer data model. No new surface area — every change is in the extraction and assembly pipeline.
 
-- **Pass 2: DOM extraction** — image priority ladder, option group parsing
-- **Richer variants** — cartesian product from option groups, per-variant price/availability
-- **Image deduplication** — strip resize params, normalize URLs, rank by resolution
-- **Frontend: VariantsPanel** — attribute pill selectors
-- **Frontend: ImageGallery upgrade** — full-res zoom, better thumbnails
+Two root problems to fix: the LLM is over-working (it resolves conflicts, normalizes, and structures variants all from a flat candidate bag with no source context), and the data model is under-expressive (`raw_attributes: dict[str, Any]` throws away structure the HTML already encodes).
+
+### Execution checklist
+
+#### Phase 1 · DOM extraction pass
+
+Add `extract_dom_signals(html, page_url)` as a deterministic Pass 2 that enriches `ExtractionContext` before the assembler runs. No LLM.
+
+- Price fallback: `[itemprop="price"]`, `[class*="price"]` elements, `data-price` attributes — fixes Article's `price = 0.0`
+- Option groups: `<select>`, `<input type="radio">` groups, swatch containers → `OptionGroup` candidates (see Phase 2)
+- Availability: `[itemprop="availability"]`, `data-availability`, disabled button states
+
+**Done gate:**
+- [ ] Article page produces a non-zero price sourced from DOM
+- [ ] At least 3 of the 7 pages produce one or more `OptionGroup` candidates
+- [ ] No site-specific branches — structural/semantic heuristics only
+- [ ] Existing Pass 1 tests still pass
+
+**Watch for:**
+- JS-rendered pages won't have much in the DOM either. Don't force it — a missing option group is fine; a wrong one isn't.
+
+#### Phase 2 · `OptionGroup` model and structured variant assembly
+
+Replace `raw_attributes: dict[str, Any]` with `option_groups: list[OptionGroup]` on `ExtractionContext`. New models:
+
+```python
+class OptionValue(BaseModel):
+    value: str
+    available: bool = True
+    price_delta: float | None = None
+
+class OptionGroup(BaseModel):
+    dimension: str  # "Size", "Color", "Material", etc.
+    options: list[OptionValue]
+```
+
+Assembler receives typed `OptionGroup` input, generates cartesian-product `Variant` list with named attributes and per-variant price/availability. Keep `raw_attributes` as a debug overflow field only. Cap variants at 50; log when the cap applies.
+
+**Done gate:**
+- [ ] LLBean, Nike, A Day's March produce a `Variant` list with named attributes matching their option groups
+- [ ] `Variant.availability` is populated where option-level availability is known
+- [ ] Assembler prompt uses `option_groups`, not the raw blob
+
+#### Phase 3 · Signal provenance
+
+Candidates carry their extraction source so the assembler can apply a confidence hierarchy and so we can see where each value came from.
+
+```python
+class CandidateSignal(BaseModel):
+    value: str
+    source: Literal["json_ld", "meta_tag", "script_blob", "dom"]
+```
+
+Candidate fields on `ExtractionContext` change from `list[str]` to `list[CandidateSignal]`. Assembler prompt renders source labels alongside values (`"json_ld: $129.00"`, `"dom: $99.00"`). Hierarchy: `json_ld > script_blob > dom > meta_tag`. `Product` model is unchanged.
+
+**Done gate:**
+- [ ] Every candidate has a non-null `source`
+- [ ] Assembler prompt renders source labels
+- [ ] Conflicting `json_ld` and `dom` prices resolve to `json_ld` (verified by a test with a seeded conflict)
+- [ ] All existing extraction tests pass after field type change
+
+#### Phase 4 · Image pipeline upgrade
+
+Priority ladder: JSON-LD → `og:image` → script blob → DOM `srcset`/`data-zoom-src` → DOM `<img src>`. Resolution ranking: extract width hints from URL patterns (`_800x`, `?w=800`, `srcset`); prefer higher resolution. Canonical deduplication: deduplicate by canonical URL after stripping resize params, not raw string equality.
+
+**Done gate:**
+- [ ] No product has duplicate images
+- [ ] `og:image` ranks above a DOM-scraped image of the same product
+- [ ] Resolution hint is populated for at least one page that embeds width in URLs
+- [ ] All 7 pages still have at least one image
 
 ---
 
-## MVP3 — Polish and completeness (deferred)
+### Sanity checks (run before calling MVP2 done)
 
-- `POST /extract` API endpoint
-- Skeleton loading states and error boundaries
-- Responsive layout tuning
-- `AttributesTable` for `raw_attributes`
-- Taxonomy fallback to broad segments on zero overlap
-- Empty states for missing data
-- Edge case hardening for sparse HTML pages
+- [ ] All 7 pages produce a valid `Product` with no `ValidationError`
+- [ ] Article price > 0.0
+- [ ] LLM cost per product still under 1¢
+- [ ] All existing tests still pass
+
+---
+
+## MVP3 — Polish and completeness
+
+- **Taxonomy fallback** — when BM25 returns no overlap, fall back to the highest-scoring broad top-level segment instead of giving the LLM an empty list
+- **Sparse page warnings** — log a structured warning when fewer than 2 sources contribute to a field; assembler prompt flags low-confidence fields explicitly
+- **`POST /extract`** — accepts `{ "url": "..." }` or `{ "html": "...", "url": "..." }`, runs the full pipeline, returns `Product`
+- **Catalog filtering** — `GET /products?category=...&brand=...&price_max=...`
+- **`VariantsPanel`** — dimension pill selectors; selecting a combination shows the active variant's price/availability
+- **`AttributesTable`** — collapsible debug section on PDP for `raw_attributes`
+- **Skeleton loading states and error boundaries**
+- **Empty states** for missing description, images, variants, features
+- **Responsive layout** — catalog collapses to single column; PDP image gallery stacks on mobile
