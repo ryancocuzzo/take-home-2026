@@ -4,7 +4,7 @@ import unittest
 
 from backend.corpus import DATA_DIR, PAGES
 from backend.extract.structured_extraction import extract_structured_signals
-from models import ExtractionContext
+from models import ExtractionContext, OptionGroup
 
 
 def _load_html(name: str) -> str:
@@ -114,31 +114,42 @@ class TestStructuredExtraction(unittest.TestCase):
         self.assertIn("140.00", context.price_candidates)
         self.assertGreaterEqual(len(context.image_url_candidates), 1)
 
-    def test_allbirds_extracts_colors_from_data_product_object(self) -> None:
-        """Allbirds page: colorName and hues from data-product-object populate color_candidates."""
+    def test_allbirds_extracts_colors_into_option_group(self) -> None:
+        """Allbirds page: color signals from data-product-object produce a Color OptionGroup."""
         html = _load_html("allbirds-shoe.html")
         context = extract_structured_signals(
             html,
             page_url="https://www.allbirds.com/products/mens-dasher-nz",
         )
 
-        self.assertIn("Blizzard/Deep Navy", str(context.color_candidates))
+        color_group = next(
+            (g for g in context.option_group_candidates if g.dimension == "Color"), None
+        )
+        self.assertIsNotNone(color_group, "Expected a Color OptionGroup in option_group_candidates")
+        assert color_group is not None
+        values = [o.value for o in color_group.options]
         self.assertTrue(
-            any(c in context.color_candidates for c in ["blue", "white"]),
-            f"Expected hues in color_candidates, got {context.color_candidates}",
+            any("Blizzard" in v for v in values),
+            f"Expected Blizzard colorway in Color OptionGroup, got {values}",
         )
 
-    def test_allbirds_extracts_available_colorways_from_data_attributes(self) -> None:
-        """Allbirds page: data-product-color and swatch aria-labels include Auburn and other colorways."""
+    def test_allbirds_color_option_group_includes_swatch_colorways(self) -> None:
+        """Allbirds page: data-product-color and swatch aria-labels are included in the Color OptionGroup."""
         html = _load_html("allbirds-shoe.html")
         context = extract_structured_signals(
             html,
             page_url="https://www.allbirds.com/products/mens-dasher-nz",
         )
 
+        color_group = next(
+            (g for g in context.option_group_candidates if g.dimension == "Color"), None
+        )
+        self.assertIsNotNone(color_group)
+        assert color_group is not None
+        values = [o.value for o in color_group.options]
         self.assertTrue(
-            any("Auburn" in c for c in context.color_candidates),
-            f"Expected Auburn in color_candidates, got {context.color_candidates}",
+            any("Auburn" in v for v in values),
+            f"Expected Auburn colorway in Color OptionGroup, got {values}",
         )
 
     def test_allbirds_extracts_variants_into_raw_attributes(self) -> None:

@@ -127,14 +127,17 @@ Two root problems to fix: the LLM is over-working (it resolves conflicts, normal
 Add `extract_dom_signals(html, page_url)` as a deterministic Pass 2 that enriches `ExtractionContext` before the assembler runs. No LLM.
 
 - Price fallback: `[itemprop="price"]`, `[class*="price"]` elements, `data-price` attributes — fixes Article's `price = 0.0`
-- Option groups: `<select>`, `<input type="radio">` groups, swatch containers → `OptionGroup` candidates (see Phase 2)
-- Availability: `[itemprop="availability"]`, `data-availability`, disabled button states
+- Option groups: `aria-label` patterns on buttons (`"Size Option: Large"`, `"Select size 8"`) → `OptionGroup` candidates
+- Availability: `[itemprop="availability"]` content attribute → `raw_attributes["dom_availability"]`
+
+**Architectural decision — `color_candidates` removed:** `color_candidates` (flat string list) was a weaker representation of the same concept as `OptionGroup(dimension="Color")`. Both were feeding `Product.colors` via different paths. We consolidated: color signals from JSON-LD, script blobs, and `data-color-swatch` attributes now produce a Color `OptionGroup` instead of a flat list. `option_group_candidates` is the single source of truth for all variation dimensions. The assembler prompt was updated accordingly — colors are derived from the Color OptionGroup, and variants are generated only for meaningfully distinct combinations (no cartesian-product instruction).
 
 **Done gate:**
-- [ ] Article page produces a non-zero price sourced from DOM
-- [ ] At least 3 of the 7 pages produce one or more `OptionGroup` candidates
-- [ ] No site-specific branches — structural/semantic heuristics only
-- [ ] Existing Pass 1 tests still pass
+- [x] Article page produces a non-zero price sourced from DOM
+- [x] Allbirds and LLBean each produce ≥ 1 `OptionGroup` candidate from DOM (the only pages with static product option HTML)
+- [x] `color_candidates` removed — `ExtractionContext` has one concept for variation dimensions
+- [x] Assembler prompt uses `option_group_candidates`; no cartesian-product instruction
+- [x] All existing Pass 1 tests still pass
 
 **Watch for:**
 - JS-rendered pages won't have much in the DOM either. Don't force it — a missing option group is fine; a wrong one isn't.

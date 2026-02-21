@@ -13,7 +13,7 @@ from pathlib import Path
 
 from backend.assemble import assemble_product
 from backend.corpus import DATA_DIR, PAGES, PRODUCTS_DIR
-from backend.extract import extract_structured_signals
+from backend.extract import extract_dom_signals, extract_structured_signals
 from backend.taxonomy import select_category_candidates
 from models import Product
 
@@ -28,6 +28,7 @@ def product_id(filename: str, url: str | None) -> str:
 async def seed_page(filename: str, url: str | None) -> tuple[str, Product]:
     html = (DATA_DIR / filename).read_text()
     context = extract_structured_signals(html, page_url=url)
+    extract_dom_signals(html, context, page_url=url)
     candidates = select_category_candidates(context)
     product = await assemble_product(context, candidates)
     pid = product_id(filename, url)

@@ -2,7 +2,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from models import ExtractionContext
+from models import ExtractionContext, OptionGroup, OptionValue
 
 from .html_signals import DataJsonSignal, MetaSignal, ScriptSignal, extract_html_signals
 from .mapping import (
@@ -13,6 +13,9 @@ from .mapping import (
 )
 from .script_blob import iter_assigned_json_blobs
 from .urls import UrlNormalizer
+
+# Prefixes that identify product-title-style strings masquerading as color values
+_TITLE_PREFIXES = ("Men's ", "Women's ", "Kids' ", "Unisex ")
 
 
 def extract_structured_signals(
@@ -77,20 +80,24 @@ def extract_structured_signals(
         data_json=data_json, context=context, rules=rules, image_transform=image_transform
     )
     if data_color_values:
-        context.add_candidates("color_candidates", data_color_values)
-    _filter_product_title_colors(context)
+        _add_color_option_group(data_color_values, context)
     return context
 
 
-def _filter_product_title_colors(context: ExtractionContext) -> None:
-    """Remove product-title-like entries from color_candidates (e.g. "Men's Dasher NZ - Blizzard/Deep Navy")."""
-    prefixes = ("Men's ", "Women's ", "Kids' ", "Unisex ")
-    filtered = [
-        c for c in context.color_candidates
-        if not any(c.startswith(prefix) for prefix in prefixes)
-    ]
-    context.color_candidates.clear()
-    context.color_candidates.extend(filtered)
+def _add_color_option_group(color_values: list[str], context: ExtractionContext) -> None:
+    """Group extracted color strings into a Color OptionGroup, filtering out title-like entries."""
+    seen: set[str] = set()
+    options: list[OptionValue] = []
+    for raw in color_values:
+        value = raw.strip()
+        if not value or value in seen:
+            continue
+        if any(value.startswith(prefix) for prefix in _TITLE_PREFIXES):
+            continue
+        seen.add(value)
+        options.append(OptionValue(value=value))
+    if len(options) >= 2:
+        context.add_option_group(OptionGroup(dimension="Color", options=options))
 
 
 def _extract_json_ld(

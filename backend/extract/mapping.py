@@ -3,10 +3,13 @@ from dataclasses import dataclass, field
 from urllib.parse import unquote
 from typing import Any, Callable, Protocol
 
+from models import OptionGroup, OptionValue
+
 
 class CandidateSink(Protocol):
     def add_candidates(self, field_name: str, values: list[str]) -> None: ...
     def add_raw_attribute(self, key: str, value: str | int | float | bool) -> None: ...
+    def add_option_group(self, group: OptionGroup) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -46,15 +49,15 @@ class MappingRules:
             "features": "key_feature_candidates",
             "highlights": "key_feature_candidates",
             "benefits": "key_feature_candidates",
-            "color": "color_candidates",
-            "colour": "color_candidates",
-            "colors": "color_candidates",
-            "colourways": "color_candidates",
-            "colorDescription": "color_candidates",
-            "colorName": "color_candidates",
-            "hues": "color_candidates",
-            "swatchColors": "color_candidates",
         }
+    )
+    # JSON keys whose values are color strings; collected and emitted as a
+    # Color OptionGroup rather than a flat candidate list.
+    color_keys: frozenset[str] = field(
+        default_factory=lambda: frozenset({
+            "color", "colour", "colors", "colourways",
+            "colorDescription", "colorName", "hues", "swatchColors",
+        })
     )
     meta_key_to_field: dict[str, str] = field(
         default_factory=lambda: {
@@ -96,9 +99,16 @@ def collect_candidates_from_node(
         values = _collect_values_for_key(node, key)
         if image_transform and field_name == "image_url_candidates":
             values = [image_transform(v) for v in values]
-        elif field_name == "color_candidates":
-            values = [_decode_color_value(v) for v in values]
         sink.add_candidates(field_name, values)
+
+    # Collect color values across all color keys and emit as a Color OptionGroup
+    color_values: list[str] = []
+    for key in rules.color_keys:
+        color_values.extend(
+            _decode_color_value(v) for v in _collect_values_for_key(node, key)
+        )
+    if color_values:
+        _emit_color_option_group(color_values, sink)
 
     # Capture structured passthrough (variants, options) — JSON-serialize for LLM
     for key in rules.structured_passthrough_keys:
@@ -108,11 +118,24 @@ def collect_candidates_from_node(
 
     # Capture remaining primitive attributes (skip JSON-LD metadata and already-extracted keys)
     if isinstance(node, dict):
-        known_keys = set(rules.json_key_to_field.keys())
+        known_keys = set(rules.json_key_to_field.keys()) | set(rules.color_keys)
         for key, value in node.items():
             if _should_skip_raw_attribute(key, value, known_keys):
                 continue
             sink.add_raw_attribute(key, value)
+
+
+def _emit_color_option_group(color_values: list[str], sink: CandidateSink) -> None:
+    """Deduplicate color values and emit as a Color OptionGroup if there are 2+."""
+    seen: set[str] = set()
+    options: list[OptionValue] = []
+    for raw in color_values:
+        value = raw.strip()
+        if value and value not in seen:
+            seen.add(value)
+            options.append(OptionValue(value=value))
+    if len(options) >= 2:
+        sink.add_option_group(OptionGroup(dimension="Color", options=options))
 
 
 def _decode_color_value(value: str) -> str:

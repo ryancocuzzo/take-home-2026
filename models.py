@@ -46,6 +46,17 @@ class Price(BaseModel):
         return v
 
 
+class OptionValue(BaseModel):
+    value: str
+    available: bool = True
+    price_delta: float | None = None
+
+
+class OptionGroup(BaseModel):
+    dimension: str  # e.g. "Size", "Color", "Material"
+    options: list[OptionValue]
+
+
 class Variant(BaseModel):
     name: str
     attributes: dict[str, str] = Field(default_factory=dict)
@@ -94,9 +105,12 @@ class ExtractionContext(BaseModel):
     # Secondary enrichment signals
     category_hint_candidates: list[str] = Field(default_factory=list)
     key_feature_candidates: list[str] = Field(default_factory=list)
-    color_candidates: list[str] = Field(default_factory=list)
 
-    # Raw passthrough attributes for LLM reasoning
+    # Structured variation dimensions (Color, Size, Material, etc.)
+    # Each OptionGroup represents one axis of product variation with its available values.
+    option_group_candidates: list[OptionGroup] = Field(default_factory=list)
+
+    # Raw passthrough attributes for LLM reasoning (debug overflow)
     raw_attributes: dict[str, Any] = Field(default_factory=dict)
 
     _CANDIDATE_FIELDS = {
@@ -108,7 +122,6 @@ class ExtractionContext(BaseModel):
         "image_url_candidates",
         "category_hint_candidates",
         "key_feature_candidates",
-        "color_candidates",
     }
 
     def add_candidates(self, field_name: str, values: list[str]) -> None:
@@ -118,6 +131,21 @@ class ExtractionContext(BaseModel):
 
     def add_raw_attribute(self, key: str, value: str | int | float | bool) -> None:
         self.raw_attributes[key] = value
+
+    def add_option_group(self, group: OptionGroup) -> None:
+        """
+        Add an OptionGroup, merging into an existing group of the same dimension
+        (case-insensitive) rather than creating a duplicate.
+        """
+        for existing in self.option_group_candidates:
+            if existing.dimension.lower() == group.dimension.lower():
+                seen = {o.value for o in existing.options}
+                for opt in group.options:
+                    if opt.value not in seen:
+                        existing.options.append(opt)
+                        seen.add(opt.value)
+                return
+        self.option_group_candidates.append(group)
 
     def merge_unique(self, field_name: str, values: list[str]) -> None:
         """
