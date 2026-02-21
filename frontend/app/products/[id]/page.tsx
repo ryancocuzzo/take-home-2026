@@ -148,6 +148,10 @@ export default async function ProductPage({ params }: PageProps) {
                         attrKeys.add(k);
                       }
                     }
+                    // Color is already shown in the Colors section above
+                    attrKeys.delete("color");
+                    attrKeys.delete("colour");
+                    if (attrKeys.size === 0) return null;
                     return Array.from(attrKeys).map((attrKey) => {
                       const values = [
                         ...new Set(

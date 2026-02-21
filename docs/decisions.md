@@ -64,6 +64,14 @@ These are real issues discovered by running the pipeline against all 5 product p
 
 **Fix:** Tightened the colors rule in the system prompt: list all options from `color_candidates`, include hex codes and colorway names, empty only when candidates are empty.
 
+### Variants are a partial snapshot, not the full product matrix
+
+`product.colors` comes from swatch/colorway data on the page — it represents all colors the product line comes in. `product.variants` comes from the active variant blob on that same page — it only contains size/availability data for the one color that was loaded. We have no data on which sizes Auburn comes in, or which images belong to which color.
+
+The correct model would be `colorways: [{color, image_urls, sizes}]`, but building that requires fetching each color's page separately — 22 API calls for Allbirds alone. Deferred.
+
+**UI consequence:** The "Available options" section only shows non-color attributes (size, etc.) and omits color entirely, since the sizes shown only apply to the scraped color. Displaying them as product-level options would imply all colors come in all sizes, which we can't verify.
+
 ### Allbirds: colors were product titles instead of colorway names
 
 **Symptom:** `colors` contained entries like `"Men's Dasher NZ - Blizzard/Deep Navy (Blizzard Sole)"` instead of `"Blizzard/Deep Navy (Blizzard Sole)"`, `"Auburn"`, etc.
