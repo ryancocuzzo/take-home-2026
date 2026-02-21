@@ -27,25 +27,23 @@ make frontend                   # http://localhost:3000
 
 ```mermaid
 flowchart LR
-    HTML["Raw HTML"] --> Pass1
+    HTML["Raw HTML"]
 
     subgraph extract ["Deterministic - no LLM"]
         Pass1["Pass 1: JSON-LD, meta tags, script blobs"]
-
         Pass1 --> Context["ExtractionContext - candidate bag"]
-
         Context --> BM25["Taxonomy Pre-filter: BM25 to top 20 categories"]
     end
 
-    Context --> Assembler
-
-    BM25 --> Assembler["LLM Assembler: gemini-2.0-flash-lite, structured output"]
+    HTML --> Pass1
+    Context --> Assembler["LLM Assembler: gemini-2.0-flash-lite, structured output"]
+    BM25 --> Assembler
 
     Assembler --> Product["Validated Product - Pydantic"]
 
-    Product --> JSON["data/products/*.json"]
-    Product --> API["FastAPI GET /products"]
-    API --> UI["Next.js Catalog + PDP"]
+    Product --> JsonFiles["data/products/*.json"]
+    Product --> RestAPI["FastAPI GET /products"]
+    RestAPI --> UI["Next.js Catalog + PDP"]
 ```
 
 The pipeline is split into passes by design. Pass 1 does all the deterministic work — parsing JSON-LD, Open Graph meta tags, and embedded script blobs like `window.__INITIAL_STATE__` — and produces an `ExtractionContext`: a bag of *candidates* (multiple titles, prices, images) with nothing resolved yet. This is cheap, fast, and testable without an API key.
