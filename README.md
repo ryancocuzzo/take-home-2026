@@ -31,7 +31,9 @@ flowchart LR
 
     subgraph extract ["Deterministic - no LLM"]
         Pass1["Pass 1: JSON-LD, meta tags, script blobs"]
-        Pass1 --> Context["ExtractionContext - candidate bag"]
+        Pass2["Pass 2: DOM signals — price text, option groups, availability"]
+        Pass1 --> Pass2
+        Pass2 --> Context["ExtractionContext - candidate bag"]
         Context --> BM25["Taxonomy Pre-filter: BM25 to top 20 categories"]
     end
 
@@ -41,14 +43,17 @@ flowchart LR
 
     Assembler --> Product["Validated Product - Pydantic"]
 
-    Product --> JsonFiles["data/products/*.json"]
-    Product --> RestAPI["FastAPI GET /products"]
+    Product --> Identity["Identity Resolver: GTIN exact match + title/brand similarity"]
+    Identity --> JsonFiles["data/products/*.json"]
+    Identity --> RestAPI["FastAPI GET /products"]
     RestAPI --> UI["Next.js Catalog + PDP"]
 ```
 
-The pipeline is split into passes by design. Pass 1 does all the deterministic work — parsing JSON-LD, Open Graph meta tags, and embedded script blobs like `window.__INITIAL_STATE__` — and produces an `ExtractionContext`: a bag of *candidates* (multiple titles, prices, images) with nothing resolved yet. This is cheap, fast, and testable without an API key.
+The pipeline is split into passes by design. Pass 1 does all the deterministic work — parsing JSON-LD, Open Graph meta tags, and embedded script blobs like `window.__INITIAL_STATE__` — and produces an `ExtractionContext`: a bag of *candidates* (multiple titles, prices, images) with nothing resolved yet. Pass 2 enriches the same context with signals from the visible DOM structure: price text (covering sites like Article where price only appears in `<span class="regularPrice">`), product option groups extracted from `aria-label` patterns, and availability from `itemprop` attributes. Both passes are cheap, fast, and testable without an API key.
 
 The taxonomy pre-filter uses BM25 to narrow Google's 5,600-line product taxonomy to ~20 plausible categories. The LLM assembler then resolves all candidates into a single validated `Product` using structured output. If the category validator rejects the LLM's choice, it retries once with the error appended.
+
+After assembly, the identity resolver deduplicates across merchants: GTIN/UPC exact match first (confidence floored at 0.95), then title+brand similarity as a fallback. Matched pairs are clustered via `networkx.connected_components` so transitive matches (A↔B and B↔C) land in one group. Each product receives a stable `canonical_product_id` and an explainable `MatchDecision` with per-signal evidence and configurable thresholds.
 
 This separation means extraction passes can be changed or replaced independently, deterministic bugs are reproducible without LLM calls, and the LLM only does what it's actually good at: semantic disambiguation.
 
@@ -92,9 +97,10 @@ See [docs/decisions.md](docs/decisions.md) for detailed trade-offs and bugs enco
 ├── models.py                    # Product, ExtractionContext, Category, Price, Variant
 ├── ai.py                        # OpenRouter API wrapper with cost logging
 ├── backend/
-│   ├── extract/                 # Pass 1: JSON-LD, meta tags, script blob parsing
+│   ├── extract/                 # Pass 1 (JSON-LD, meta tags, script blobs) + Pass 2 (DOM signals)
 │   ├── taxonomy/                # BM25 category pre-filter
 │   ├── assemble/                # LLM assembler (candidates → Product)
+│   ├── identity/                # Cross-merchant deduplication (GTIN + title/brand similarity)
 │   └── api/                     # FastAPI read-only routes
 ├── frontend/                    # Next.js 16 + React 19 + shadcn/ui
 │   ├── app/                     # Catalog page (/) and PDP (/products/[id])
@@ -112,7 +118,7 @@ See [docs/decisions.md](docs/decisions.md) for detailed trade-offs and bugs enco
 These were intentional scope boundaries for the take-home. They are the first areas to harden for production-scale systems.
 
 - **Canonical commerce model**: current schema is `Product + Price + Variant`; next step is splitting into `Product` (identity), `Merchant`, and `Offer` (merchant-specific price/availability/shipping/promo) so the same product can have multiple offers without schema churn.
-- **Entity resolution / identity**: dedupe now uses a two-tier strategy — UPC/GTIN exact match first, then title+brand similarity fallback when GTIN is absent. `CanonicalProductId` and explainable `MatchEvidence` are stored per product, with thresholds configurable via env vars.
+- **Entity resolution / identity**: implemented — two-tier GTIN exact match + title/brand similarity, transitive clustering via networkx, stable `canonical_product_id`, and explainable `MatchDecision` per product. Next step: canonical commerce model splitting `Product` into `Product` (identity), `Merchant`, and `Offer` so the same product can have multiple merchant-scoped price/availability records without schema churn.
 - **Query surface**: current API is read-only listing/detail. Add deterministic filters first (`category`, `brand`, `price`, variant attributes), then semantic retrieval as rank-after-filter, not model-only retrieval.
 - **Reliability and reprocessing**: seed script is batch-only. Move to idempotent jobs keyed by content hash, process only changed pages, and support backfills/reindex without downtime.
 - **Explainability**: add field-level provenance (`value`, `source`, `confidence`) to extraction outputs so we can answer "why this value/category/match?" in logs and internal tooling.
